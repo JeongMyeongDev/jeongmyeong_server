@@ -14,7 +14,16 @@ export class PrismaService
       throw new Error('DATABASE_URL is not set');
     }
 
-    const pool = new Pool({ connectionString });
+    const databaseUrl = new URL(connectionString);
+    const schema = databaseUrl.searchParams.get('schema');
+    databaseUrl.searchParams.delete('schema');
+    if (schema) {
+      databaseUrl.searchParams.set('options', `-c search_path=${schema},public`);
+    }
+
+    const pool = new Pool({
+      connectionString: databaseUrl.toString(),
+    });
     const adapter = new PrismaPg(pool);
     super({ adapter });
   }
