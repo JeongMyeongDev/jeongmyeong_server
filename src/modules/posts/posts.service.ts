@@ -148,7 +148,6 @@ export class PostsService {
           selectedText: dto.selection.selectedText,
           startOffset: dto.selection.startOffset,
           endOffset: dto.selection.endOffset,
-          commentId: comment.id,
         },
         select: { id: true },
       });

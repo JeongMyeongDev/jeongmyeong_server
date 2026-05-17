@@ -25,8 +25,8 @@ export class CreateDebateDto {
   tags?: string[];
 
   @IsOptional()
-  @IsIn(['TIME_LIMIT', 'MANUAL'])
-  closeConditionType?: 'TIME_LIMIT' | 'MANUAL';
+  @IsIn(['TIME_LIMIT', 'MANUAL', 'TARGET_REACHED'])
+  closeConditionType?: 'TIME_LIMIT' | 'MANUAL' | 'TARGET_REACHED';
 
   @IsOptional()
   @IsDateString()

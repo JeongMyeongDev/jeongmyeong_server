@@ -27,10 +27,25 @@ export class DebatesService {
         title: dto.title,
         description: dto.description,
         debateType: dto.debateType,
-        tags: dto.tags ?? [],
         closeConditionType: dto.closeConditionType,
         closeAt: dto.closeAt ? new Date(dto.closeAt) : undefined,
         creatorId: userId,
+        participants: {
+          create: {
+            userId,
+            roleInDebate: 'CREATOR',
+          },
+        },
+        tagMaps: {
+          create: (dto.tags ?? []).map((name) => ({
+            tag: {
+              connectOrCreate: {
+                where: { name },
+                create: { name },
+              },
+            },
+          })),
+        },
       },
       select: {
         id: true,
@@ -38,6 +53,11 @@ export class DebatesService {
         description: true,
         debateType: true,
         status: true,
+        tagMaps: {
+          select: {
+            tag: { select: { id: true, name: true } },
+          },
+        },
       },
     });
 
@@ -62,9 +82,13 @@ export class DebatesService {
           description: true,
           debateType: true,
           status: true,
-          tags: true,
           createdAt: true,
           archivedAt: true,
+          tagMaps: {
+            select: {
+              tag: { select: { id: true, name: true } },
+            },
+          },
         },
       }),
       this.prisma.debate.count({ where }),
@@ -82,8 +106,12 @@ export class DebatesService {
         description: true,
         debateType: true,
         status: true,
-        tags: true,
         createdAt: true,
+        tagMaps: {
+          select: {
+            tag: { select: { id: true, name: true } },
+          },
+        },
         creator: {
           select: { id: true, nickname: true },
         },
@@ -252,7 +280,11 @@ export class DebatesService {
     }
 
     if (query.tag) {
-      where.tags = { has: query.tag };
+      where.tagMaps = {
+        some: {
+          tag: { name: query.tag },
+        },
+      };
     }
 
     if (query.type) {
@@ -318,6 +350,7 @@ export class DebatesService {
     }
 
     if (sourceContent.slice(startOffset, endOffset) !== selectedText) {
+      console.log('sourceContent:', sourceContent.slice(startOffset, endOffset));
       throw new BadRequestException('선택한 문자열이 원문과 일치하지 않습니다.');
     }
   }

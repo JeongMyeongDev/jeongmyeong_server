@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 
 export class CreateConsensusDto {
   @IsString()
@@ -9,7 +9,7 @@ export class CreateConsensusDto {
   @IsNotEmpty()
   content!: string;
 
-  @IsOptional()
   @IsString()
-  selectionTargetId?: string;
+  @IsNotEmpty()
+  selectionTargetId!: string;
 }

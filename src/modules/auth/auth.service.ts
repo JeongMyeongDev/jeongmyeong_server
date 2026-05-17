@@ -37,7 +37,7 @@ export class AuthService {
       data: {
         email,
         nickname,
-        password: await bcrypt.hash(password, 10),
+        passwordHash: await bcrypt.hash(password, 10),
       },
       select: { id: true, email: true, nickname: true },
     });
@@ -49,7 +49,7 @@ export class AuthService {
     const { email, password } = loginDto;
     const user = await this.prisma.user.findUnique({ where: { email } });
 
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       throw new UnauthorizedException('이메일 또는 비밀번호가 일치하지 않습니다.');
     }
 

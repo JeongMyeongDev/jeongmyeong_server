@@ -7,60 +7,110 @@ datasource db {
 }
 
 model User {
-  id           String          @id @default(uuid())
-  email        String          @unique
-  nickname     String          @unique
-  password     String
-  profileImage String?
-  role         UserRole        @default(USER)
-  status       UserStatus      @default(ACTIVE)
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  debates      Debate[]
-  posts        Post[]
-  comments     Comment[]
-  selections   SelectionTarget[]
-  consensuses  Consensus[]
-  votes        ConsensusVote[]
+  id             String              @id @default(uuid())
+  email          String              @unique
+  passwordHash   String              @map("password_hash")
+  nickname       String              @unique
+  role           UserRole            @default(USER)
+  status         UserStatus          @default(ACTIVE)
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  profileImage   String?             @map("profile_image")
+  debates        Debate[]
+  posts          Post[]
+  comments       Comment[]
+  selections     SelectionTarget[]
+  consensuses    Consensus[]
+  votes          ConsensusVote[]
+  participants   DebateParticipant[]
+  moderationLogs ModerationLog[]
+  definitions    Definition[]
 
   @@map("users")
 }
 
 model Debate {
-  id                 String             @id @default(uuid())
-  title              String
-  description        String
-  debateType         DebateType
-  tags               String[]           @default([])
-  closeConditionType CloseConditionType?
-  closeAt            DateTime?
-  status             DebateStatus       @default(OPEN)
-  creatorId          String
-  creator            User               @relation(fields: [creatorId], references: [id])
-  archivedAt         DateTime?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  posts              Post[]
-  comments           Comment[]
-  selections         SelectionTarget[]
-  consensuses        Consensus[]
+  id                      String              @id @default(uuid())
+  creatorId               String              @map("creator_id")
+  creator                 User                @relation(fields: [creatorId], references: [id])
+  parentDebateId          String?             @map("parent_debate_id")
+  parentDebate            Debate?             @relation("ChildDebates", fields: [parentDebateId], references: [id])
+  childDebates            Debate[]            @relation("ChildDebates")
+  sourceSelectionTargetId String?             @map("source_selection_target_id")
+  sourceSelectionTarget   SelectionTarget?    @relation("ChildDebateSource", fields: [sourceSelectionTargetId], references: [id])
+  title                   String
+  description             String
+  debateType              DebateType          @map("debate_type")
+  status                  DebateStatus        @default(OPEN)
+  closeConditionType      CloseConditionType? @map("close_condition_type")
+  closeAt                 DateTime?           @map("close_at")
+  closedAt                DateTime?           @map("closed_at")
+  archivedAt              DateTime?           @map("archived_at")
+  createdAt               DateTime            @default(now()) @map("created_at")
+  updatedAt               DateTime            @updatedAt @map("updated_at")
+  tagMaps                 DebateTagMap[]
+  participants            DebateParticipant[]
+  posts                   Post[]
+  comments                Comment[]
+  selections              SelectionTarget[]
+  consensuses             Consensus[]
+  definitions             Definition[]
+  moderationLogs          ModerationLog[]
 
   @@index([creatorId])
+  @@index([parentDebateId])
+  @@index([sourceSelectionTargetId])
   @@index([status])
   @@map("debates")
 }
 
+model DebateTag {
+  id         String         @id @default(uuid())
+  name       String         @unique
+  createdAt  DateTime       @default(now()) @map("created_at")
+  debateMaps DebateTagMap[]
+
+  @@map("debate_tags")
+}
+
+model DebateTagMap {
+  id       String    @id @default(uuid())
+  debateId String    @map("debate_id")
+  debate   Debate    @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  tagId    String    @map("tag_id")
+  tag      DebateTag @relation(fields: [tagId], references: [id])
+
+  @@unique([debateId, tagId])
+  @@index([tagId])
+  @@map("debate_tag_maps")
+}
+
+model DebateParticipant {
+  id           String           @id @default(uuid())
+  debateId     String           @map("debate_id")
+  debate       Debate           @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  userId       String           @map("user_id")
+  user         User             @relation(fields: [userId], references: [id])
+  joinedAt     DateTime         @default(now()) @map("joined_at")
+  lastReadAt   DateTime?        @map("last_read_at")
+  roleInDebate DebateMemberRole @default(PARTICIPANT) @map("role_in_debate")
+
+  @@unique([debateId, userId])
+  @@index([userId])
+  @@map("debate_participants")
+}
+
 model Post {
   id        String     @id @default(uuid())
-  debateId  String
-  debate    Debate     @relation(fields: [debateId], references: [id])
-  authorId  String
+  debateId  String     @map("debate_id")
+  debate    Debate     @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  authorId  String     @map("author_id")
   author    User       @relation(fields: [authorId], references: [id])
   content   String
   status    PostStatus @default(VISIBLE)
-  deletedAt DateTime?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  deletedAt DateTime?  @map("deleted_at")
   comments  Comment[]
 
   @@index([debateId])
@@ -69,23 +119,23 @@ model Post {
 }
 
 model Comment {
-  id              String          @id @default(uuid())
-  debateId        String
-  debate          Debate          @relation(fields: [debateId], references: [id])
-  postId          String
-  post            Post            @relation(fields: [postId], references: [id])
-  parentCommentId String?
-  parentComment   Comment?        @relation("CommentReplies", fields: [parentCommentId], references: [id])
-  replies         Comment[]        @relation("CommentReplies")
-  authorId        String
-  author          User            @relation(fields: [authorId], references: [id])
+  id              String        @id @default(uuid())
+  debateId        String        @map("debate_id")
+  debate          Debate        @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  postId          String?       @map("post_id")
+  post            Post?         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parentCommentId String?       @map("parent_comment_id")
+  parentComment   Comment?      @relation("CommentReplies", fields: [parentCommentId], references: [id])
+  replies         Comment[]     @relation("CommentReplies")
+  authorId        String        @map("author_id")
+  author          User          @relation(fields: [authorId], references: [id])
   content         String
-  status          CommentStatus   @default(VISIBLE)
-  selection       SelectionTarget?
-  deletedAt       DateTime?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  status          CommentStatus @default(VISIBLE)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  deletedAt       DateTime?     @map("deleted_at")
 
+  @@index([debateId])
   @@index([postId])
   @@index([parentCommentId])
   @@index([authorId])
@@ -94,59 +144,121 @@ model Comment {
 
 model SelectionTarget {
   id           String          @id @default(uuid())
-  debateId     String
-  debate       Debate          @relation(fields: [debateId], references: [id])
-  creatorId    String
+  debateId     String          @map("debate_id")
+  debate       Debate          @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  sourceType   SelectionSource @map("source_type")
+  sourceId     String          @map("source_id")
+  selectedText String          @map("selected_text")
+  startOffset  Int             @map("start_offset")
+  endOffset    Int             @map("end_offset")
+  creatorId    String          @map("creator_id")
   creator      User            @relation(fields: [creatorId], references: [id])
-  sourceType   SelectionSource
-  sourceId     String
-  selectedText String
-  startOffset  Int
-  endOffset    Int
-  commentId    String?         @unique
-  comment      Comment?        @relation(fields: [commentId], references: [id])
+  createdAt    DateTime        @default(now()) @map("created_at")
   consensuses  Consensus[]
-  createdAt    DateTime        @default(now())
+  definitions  Definition[]
+  childDebates Debate[]        @relation("ChildDebateSource")
 
   @@index([debateId])
+  @@index([creatorId])
   @@index([sourceType, sourceId])
   @@map("selection_targets")
 }
 
 model Consensus {
   id                String          @id @default(uuid())
-  debateId          String
-  debate            Debate          @relation(fields: [debateId], references: [id])
-  selectionTargetId String?
-  selectionTarget   SelectionTarget? @relation(fields: [selectionTargetId], references: [id])
-  creatorId         String
+  debateId          String          @map("debate_id")
+  debate            Debate          @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  selectionTargetId String          @map("selection_target_id")
+  selectionTarget   SelectionTarget @relation(fields: [selectionTargetId], references: [id])
+  creatorId         String          @map("creator_id")
   creator           User            @relation(fields: [creatorId], references: [id])
   title             String
   content           String
   status            ConsensusStatus @default(OPEN)
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  resultSummary     String?         @map("result_summary")
+  approvedAt        DateTime?       @map("approved_at")
+  closedAt          DateTime?       @map("closed_at")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
   votes             ConsensusVote[]
+  definitions       Definition[]
 
   @@index([debateId])
   @@index([selectionTargetId])
+  @@index([creatorId])
   @@map("consensuses")
 }
 
 model ConsensusVote {
-  id          String     @id @default(uuid())
-  consensusId String
-  consensus   Consensus  @relation(fields: [consensusId], references: [id])
-  userId      String
-  user        User       @relation(fields: [userId], references: [id])
-  voteType    VoteType
+  id          String    @id @default(uuid())
+  consensusId String    @map("consensus_id")
+  consensus   Consensus @relation(fields: [consensusId], references: [id], onDelete: Cascade)
+  userId      String    @map("user_id")
+  user        User      @relation(fields: [userId], references: [id])
+  voteType    VoteType  @map("vote_type")
   comment     String?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@unique([consensusId, userId])
   @@index([userId])
   @@map("consensus_votes")
+}
+
+model Definition {
+  id                String           @id @default(uuid())
+  term              String
+  content           String
+  sourceDebateId    String           @map("source_debate_id")
+  sourceDebate      Debate           @relation(fields: [sourceDebateId], references: [id])
+  sourceConsensusId String?          @map("source_consensus_id")
+  sourceConsensus   Consensus?       @relation(fields: [sourceConsensusId], references: [id])
+  selectionTargetId String?          @map("selection_target_id")
+  selectionTarget   SelectionTarget? @relation(fields: [selectionTargetId], references: [id])
+  scope             DefinitionScope
+  status            DefinitionStatus @default(ACTIVE)
+  creatorId         String           @map("creator_id")
+  creator           User             @relation(fields: [creatorId], references: [id])
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  terms             DefinitionTerm[]
+
+  @@index([term])
+  @@index([sourceDebateId])
+  @@index([sourceConsensusId])
+  @@index([selectionTargetId])
+  @@index([scope])
+  @@index([status])
+  @@map("definitions")
+}
+
+model DefinitionTerm {
+  id             String     @id @default(uuid())
+  definitionId   String     @map("definition_id")
+  definition     Definition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  normalizedTerm String     @map("normalized_term")
+  originalTerm   String     @map("original_term")
+
+  @@index([normalizedTerm])
+  @@map("definition_terms")
+}
+
+model ModerationLog {
+  id         String               @id @default(uuid())
+  debateId   String               @map("debate_id")
+  debate     Debate               @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  targetType ModerationTargetType @map("target_type")
+  targetId   String               @map("target_id")
+  actionType ModerationActionType @map("action_type")
+  actorId    String               @map("actor_id")
+  actor      User                 @relation(fields: [actorId], references: [id])
+  reason     String?
+  createdAt  DateTime             @default(now()) @map("created_at")
+
+  @@index([debateId])
+  @@index([actorId])
+  @@index([targetType, targetId])
+  @@map("moderation_logs")
 }
 
 enum UserRole {
@@ -156,8 +268,8 @@ enum UserRole {
 
 enum UserStatus {
   ACTIVE
-  INACTIVE
   SUSPENDED
+  DELETED
 }
 
 enum DebateType {
@@ -166,24 +278,33 @@ enum DebateType {
   PROS_CONS
 }
 
-enum CloseConditionType {
-  TIME_LIMIT
-  MANUAL
-}
-
 enum DebateStatus {
   OPEN
   CLOSED
   ARCHIVED
 }
 
+enum CloseConditionType {
+  TIME_LIMIT
+  MANUAL
+  TARGET_REACHED
+}
+
+enum DebateMemberRole {
+  CREATOR
+  PARTICIPANT
+  MODERATOR
+}
+
 enum PostStatus {
   VISIBLE
+  HIDDEN
   DELETED
 }
 
 enum CommentStatus {
   VISIBLE
+  HIDDEN
   DELETED
 }
 
@@ -194,6 +315,8 @@ enum SelectionSource {
 
 enum ConsensusStatus {
   OPEN
+  APPROVED
+  REJECTED
   CLOSED
 }
 
@@ -203,3 +326,26 @@ enum VoteType {
   COMMENT
 }
 
+enum DefinitionScope {
+  IN_DEBATE
+  GLOBAL_REFERENCE
+}
+
+enum DefinitionStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum ModerationTargetType {
+  POST
+  COMMENT
+  CONSENSUS
+  DEBATE
+}
+
+enum ModerationActionType {
+  HIDE
+  DELETE
+  CLOSE
+  RESTORE
+}
