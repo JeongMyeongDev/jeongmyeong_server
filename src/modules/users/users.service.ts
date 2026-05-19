@@ -1,20 +1,32 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateMeDto } from './dto/update-me.dto';
+
+const publicProfileSelect = {
+  id: true,
+  nickname: true,
+  profileImage: true,
+  createdAt: true,
+} satisfies Prisma.UserSelect;
+
+const meProfileSelect = {
+  id: true,
+  nickname: true,
+  profileImage: true,
+} satisfies Prisma.UserSelect;
+
+type PublicProfile = Prisma.UserGetPayload<{ select: typeof publicProfileSelect }>;
+type MeProfile = Prisma.UserGetPayload<{ select: typeof meProfileSelect }>;
 
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findPublicProfile(userId: string) {
+  async findPublicProfile(userId: string): Promise<{ success: true; user: PublicProfile }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        nickname: true,
-        profileImage: true,
-        createdAt: true,
-      },
+      select: publicProfileSelect,
     });
 
     if (!user) {
@@ -24,7 +36,7 @@ export class UsersService {
     return { success: true, user };
   }
 
-  async updateMe(userId: string, dto: UpdateMeDto) {
+  async updateMe(userId: string, dto: UpdateMeDto): Promise<{ success: true; user: MeProfile }> {
     if (dto.nickname) {
       const duplicate = await this.prisma.user.findFirst({
         where: { nickname: dto.nickname, NOT: { id: userId } },
@@ -38,13 +50,9 @@ export class UsersService {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: dto,
-      select: {
-        id: true,
-        nickname: true,
-        profileImage: true,
-      },
+      select: meProfileSelect,
     });
 
-    return { success: true, data: user };
+    return { success: true, user };
   }
 }
