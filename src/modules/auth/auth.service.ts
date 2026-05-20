@@ -18,7 +18,11 @@ export class AuthService {
   ) {}
 
   async register(registerDto: RegisterDto) {
-    const { email, nickname, password } = registerDto;
+    const { email, nickname, password, passwordConfirm } = registerDto;
+
+    if (password !== passwordConfirm) {
+      throw new ConflictException('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
+    }
 
     const existingUser = await this.prisma.user.findFirst({
       where: { OR: [{ email }, { nickname }] },
@@ -48,8 +52,9 @@ export class AuthService {
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;
     const user = await this.prisma.user.findUnique({ where: { email } });
-
+    console.log(password, user?.passwordHash);
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+      
       throw new UnauthorizedException('이메일 또는 비밀번호가 일치하지 않습니다.');
     }
 
