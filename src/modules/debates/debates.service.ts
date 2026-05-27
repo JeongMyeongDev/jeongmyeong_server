@@ -86,7 +86,23 @@ export class DebatesService {
         skip: (page - 1) * limit,
         take: limit,
         orderBy: { [sort]: query.direction ?? 'desc' },
-        select: debateSummarySelect,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          debateType: true,
+          status: true,
+          createdAt: true,
+          archivedAt: true,
+          creator: {
+            select: { id: true, nickname: true },
+          },
+          tagMaps: {
+            select: {
+              tag: { select: { id: true, name: true } },
+            },
+          },
+        },
       }),
       this.prisma.debate.count({ where }),
     ]);
