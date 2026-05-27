@@ -43,6 +43,12 @@ export class DebatesController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post(':debateId/participants')
+  join(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.debatesService.join(debateId, user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post(':debateId/archive')
   archive(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.debatesService.archive(debateId, user.id, user.role);
