@@ -84,6 +84,9 @@ export class DebatesService {
           status: true,
           createdAt: true,
           archivedAt: true,
+          creator: {
+            select: { id: true, nickname: true },
+          },
           tagMaps: {
             select: {
               tag: { select: { id: true, name: true } },
