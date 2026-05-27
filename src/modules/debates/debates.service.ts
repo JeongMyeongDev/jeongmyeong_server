@@ -102,6 +102,9 @@ export class DebatesService {
               tag: { select: { id: true, name: true } },
             },
           },
+          _count: {
+            select: { participants: true },
+          },
         },
       }),
       this.prisma.debate.count({ where }),
@@ -370,9 +373,11 @@ export class DebatesService {
   }
 
   private withParticipantCount<T extends { _count?: { participants: number } }>(debate: T) {
+    const { _count, ...rest } = debate;
+
     return {
-      ...debate,
-      participantCount: debate._count?.participants ?? 0,
+      ...rest,
+      participantCount: _count?.participants ?? 0,
     };
   }
 
