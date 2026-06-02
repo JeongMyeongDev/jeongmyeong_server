@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -10,6 +11,7 @@ import {
 import { CurrentUser } from '../../common/auth/authenticated-user';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { CreateChildDebateDto } from './dto/create-child-debate.dto';
 import { CreateConsensusDto } from './dto/create-consensus.dto';
 import { CreateDebateDto } from './dto/create-debate.dto';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -54,6 +56,18 @@ export class DebatesController {
     return this.debatesService.archive(debateId, user.id, user.role);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Patch(':debateId/archive')
+  archiveByPatch(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.debatesService.archive(debateId, user.id, user.role);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':debateId/close')
+  close(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.debatesService.close(debateId, user.id, user.role);
+  }
+
   @Get(':debateId/posts')
   listPosts(@Param('debateId') debateId: string, @Query() query: ListDebatesDto) {
     return this.debatesService.listPosts(debateId, query);
@@ -87,5 +101,20 @@ export class DebatesController {
     @Body() dto: CreateConsensusDto,
   ) {
     return this.debatesService.createConsensus(debateId, user.id, dto);
+  }
+
+  @Get(':debateId/consensuses')
+  listConsensuses(@Param('debateId') debateId: string, @Query('status') status?: string) {
+    return this.debatesService.listConsensuses(debateId, status);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('selection-targets/:selectionTargetId/child-debates')
+  createChildDebateCompat(
+    @Param('selectionTargetId') selectionTargetId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateChildDebateDto,
+  ) {
+    return this.debatesService.createChildDebate(selectionTargetId, user.id, dto);
   }
 }

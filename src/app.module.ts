@@ -3,6 +3,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { ConsensusesModule } from './modules/consensuses/consensuses.module';
+import { DefinitionsModule } from './modules/definitions/definitions.module';
 import { DebatesModule } from './modules/debates/debates.module';
 import { PostsModule } from './modules/posts/posts.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
@@ -16,6 +17,7 @@ import { UsersModule } from './modules/users/users.module';
     DebatesModule,
     PostsModule,
     ConsensusesModule,
+    DefinitionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
