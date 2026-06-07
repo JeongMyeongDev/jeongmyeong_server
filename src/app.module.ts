@@ -4,6 +4,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { ConsensusesModule } from './modules/consensuses/consensuses.module';
 import { DebatesModule } from './modules/debates/debates.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { PostsModule } from './modules/posts/posts.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { UsersModule } from './modules/users/users.module';
@@ -16,6 +17,7 @@ import { UsersModule } from './modules/users/users.module';
     DebatesModule,
     PostsModule,
     ConsensusesModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

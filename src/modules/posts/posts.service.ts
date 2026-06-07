@@ -6,12 +6,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 
 @Injectable()
 export class PostsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async updatePost(postId: string, userId: string, userRole: string, dto: UpdatePostDto) {
     const post = await this.prisma.post.findUnique({
@@ -96,6 +100,7 @@ export class PostsService {
       select: {
         id: true,
         debateId: true,
+        authorId: true,
         content: true,
         status: true,
         debate: { select: { status: true } },
@@ -109,8 +114,9 @@ export class PostsService {
       throw new ConflictException('종료된 토론에는 댓글을 작성할 수 없습니다.');
     }
 
+    let parentAuthorId: string | null = null;
     if (dto.parentCommentId) {
-      await this.ensureParentComment(postId, dto.parentCommentId);
+      parentAuthorId = await this.ensureParentComment(postId, dto.parentCommentId);
     }
 
     this.validateSelection(post.content, dto.selection);
@@ -155,6 +161,16 @@ export class PostsService {
       return { comment, selectionTarget };
     });
 
+    const recipientId = parentAuthorId ?? post.authorId;
+    const notificationType = parentAuthorId ? 'REPLY_TO_COMMENT' : 'COMMENT_ON_POST';
+    void this.notificationsService.createNotification({
+      recipientId,
+      actorId: userId,
+      type: notificationType,
+      debateId: post.debateId,
+      referenceId: result.comment.id,
+    });
+
     return { success: true, ...result };
   }
 
@@ -168,14 +184,15 @@ export class PostsService {
     }
   }
 
-  private async ensureParentComment(postId: string, parentCommentId: string) {
+  private async ensureParentComment(postId: string, parentCommentId: string): Promise<string> {
     const parent = await this.prisma.comment.findUnique({
       where: { id: parentCommentId },
-      select: { postId: true, status: true },
+      select: { postId: true, status: true, authorId: true },
     });
     if (!parent || parent.postId !== postId || parent.status !== 'VISIBLE') {
       throw new NotFoundException('부모 댓글을 찾을 수 없습니다.');
     }
+    return parent.authorId;
   }
 
   private validateSelection(

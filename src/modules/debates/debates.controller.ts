@@ -26,6 +26,12 @@ export class DebatesController {
     return this.debatesService.findAll(query, true);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('my')
+  findMyDebates(@CurrentUser() user: AuthenticatedUser, @Query() query: ListDebatesDto) {
+    return this.debatesService.findMyDebates(user.id, query);
+  }
+
   @Get()
   findAll(@Query() query: ListDebatesDto) {
     return this.debatesService.findAll(query);
