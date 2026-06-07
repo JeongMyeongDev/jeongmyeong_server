@@ -52,7 +52,6 @@ export class AuthService {
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;
     const user = await this.prisma.user.findUnique({ where: { email } });
-    console.log(password, user?.passwordHash);
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       
       throw new UnauthorizedException('이메일 또는 비밀번호가 일치하지 않습니다.');
