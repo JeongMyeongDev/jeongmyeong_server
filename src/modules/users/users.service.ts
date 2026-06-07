@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateMeDto } from './dto/update-me.dto';
+import { UpdateSettingsDto } from './dto/update-settings.dto';
 
 const publicProfileSelect = {
   id: true,
@@ -34,6 +35,29 @@ export class UsersService {
     }
 
     return { success: true, user };
+  }
+
+  async getMySettings(userId: string): Promise<{ success: true; notificationsEnabled: boolean }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { notificationsEnabled: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    return { success: true, notificationsEnabled: user.notificationsEnabled };
+  }
+
+  async updateMySettings(userId: string, dto: UpdateSettingsDto): Promise<{ success: true; notificationsEnabled: boolean }> {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { notificationsEnabled: dto.notificationsEnabled },
+      select: { notificationsEnabled: true },
+    });
+
+    return { success: true, notificationsEnabled: user.notificationsEnabled };
   }
 
   async updateMe(userId: string, dto: UpdateMeDto): Promise<{ success: true; user: MeProfile }> {

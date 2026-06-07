@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { DebateStatus, Prisma, SelectionSource } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateConsensusDto } from './dto/create-consensus.dto';
 import { CreateDebateDto } from './dto/create-debate.dto';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -36,7 +37,10 @@ const debateSummarySelect = {
 
 @Injectable()
 export class DebatesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async create(userId: string, dto: CreateDebateDto) {
     if (dto.closeConditionType === 'TIME_LIMIT' && !dto.closeAt) {
@@ -72,6 +76,47 @@ export class DebatesService {
     });
 
     return { success: true, debate: this.withParticipantCount(debate) };
+  }
+
+  async findMyDebates(userId: string, query: ListDebatesDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const sort = query.sort ?? 'createdAt';
+
+    const where = {
+      creatorId: userId,
+      ...(query.status ? { status: query.status } : {}),
+    };
+
+    const [debates, totalCount] = await this.prisma.$transaction([
+      this.prisma.debate.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { [sort]: query.direction ?? 'desc' },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          debateType: true,
+          status: true,
+          createdAt: true,
+          archivedAt: true,
+          creator: { select: { id: true, nickname: true } },
+          tagMaps: { select: { tag: { select: { id: true, name: true } } } },
+          _count: { select: { participants: true } },
+        },
+      }),
+      this.prisma.debate.count({ where }),
+    ]);
+
+    return {
+      success: true,
+      debates: debates.map((debate) => this.withParticipantCount(debate)),
+      page,
+      limit,
+      totalCount,
+    };
   }
 
   async findAll(query: ListDebatesDto, archivedOnly = false) {
@@ -216,6 +261,21 @@ export class DebatesService {
         createdAt: true,
       },
     });
+
+    const participants = await this.prisma.debateParticipant.findMany({
+      where: { debateId, userId: { not: userId } },
+      select: { userId: true },
+    });
+
+    for (const p of participants) {
+      void this.notificationsService.createNotification({
+        recipientId: p.userId,
+        actorId: userId,
+        type: 'NEW_POST_IN_DEBATE',
+        debateId,
+        referenceId: post.id,
+      });
+    }
 
     return { success: true, post };
   }

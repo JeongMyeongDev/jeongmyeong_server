@@ -7,24 +7,27 @@ datasource db {
 }
 
 model User {
-  id             String              @id @default(uuid())
-  email          String              @unique
-  passwordHash   String              @map("password_hash")
-  nickname       String              @unique
-  role           UserRole            @default(USER)
-  status         UserStatus          @default(ACTIVE)
-  createdAt      DateTime            @default(now()) @map("created_at")
-  updatedAt      DateTime            @updatedAt @map("updated_at")
-  profileImage   String?             @map("profile_image")
-  debates        Debate[]
-  posts          Post[]
-  comments       Comment[]
-  selections     SelectionTarget[]
-  consensuses    Consensus[]
-  votes          ConsensusVote[]
-  participants   DebateParticipant[]
-  moderationLogs ModerationLog[]
-  definitions    Definition[]
+  id                   String              @id @default(uuid())
+  email                String              @unique
+  passwordHash         String              @map("password_hash")
+  nickname             String              @unique
+  role                 UserRole            @default(USER)
+  status               UserStatus          @default(ACTIVE)
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+  profileImage         String?             @map("profile_image")
+  notificationsEnabled Boolean             @default(true) @map("notifications_enabled")
+  debates              Debate[]
+  posts                Post[]
+  comments             Comment[]
+  selections           SelectionTarget[]
+  consensuses          Consensus[]
+  votes                ConsensusVote[]
+  participants         DebateParticipant[]
+  moderationLogs       ModerationLog[]
+  definitions          Definition[]
+  receivedNotifications Notification[]     @relation("ReceivedNotifications")
+  sentNotifications    Notification[]      @relation("SentNotifications")
 
   @@map("users")
 }
@@ -56,6 +59,7 @@ model Debate {
   consensuses             Consensus[]
   definitions             Definition[]
   moderationLogs          ModerationLog[]
+  notifications           Notification[]
 
   @@index([creatorId])
   @@index([parentDebateId])
@@ -348,4 +352,28 @@ enum ModerationActionType {
   DELETE
   CLOSE
   RESTORE
+}
+
+enum NotificationType {
+  COMMENT_ON_POST
+  REPLY_TO_COMMENT
+  NEW_POST_IN_DEBATE
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String           @map("recipient_id")
+  recipient   User             @relation("ReceivedNotifications", fields: [recipientId], references: [id])
+  actorId     String           @map("actor_id")
+  actor       User             @relation("SentNotifications", fields: [actorId], references: [id])
+  type        NotificationType
+  debateId    String           @map("debate_id")
+  debate      Debate           @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  referenceId String           @map("reference_id")
+  isRead      Boolean          @default(false) @map("is_read")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  @@index([recipientId, isRead])
+  @@index([recipientId, createdAt])
+  @@map("notifications")
 }
