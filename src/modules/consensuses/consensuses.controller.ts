@@ -1,7 +1,9 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import { CurrentUser } from '../../common/auth/authenticated-user';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/auth/optional-jwt-auth.guard';
 import { ConsensusesService } from './consensuses.service';
 import { CreateSelectionConsensusDto } from './dto/create-selection-consensus.dto';
 import { VoteConsensusDto } from './dto/vote-consensus.dto';
@@ -9,6 +11,15 @@ import { VoteConsensusDto } from './dto/vote-consensus.dto';
 @Controller()
 export class ConsensusesController {
   constructor(private readonly consensusesService: ConsensusesService) {}
+
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get('consensuses/:consensusId')
+  findOne(
+    @Param('consensusId') consensusId: string,
+    @Req() request: Request & { user?: AuthenticatedUser },
+  ) {
+    return this.consensusesService.findOne(consensusId, request.user?.id);
+  }
 
   @UseGuards(JwtAuthGuard)
   @Post('selection-targets/:selectionTargetId/consensuses')

@@ -6,11 +6,14 @@ import {
   Param,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { CurrentUser } from '../../common/auth/authenticated-user';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/auth/optional-jwt-auth.guard';
 import { CreateConsensusDto } from './dto/create-consensus.dto';
 import { CreateDebateDto } from './dto/create-debate.dto';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -126,6 +129,15 @@ export class DebatesController {
   @Get(':debateId/selection-targets')
   listSelectionTargets(@Param('debateId') debateId: string) {
     return this.debatesService.listSelectionTargets(debateId);
+  }
+
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get(':debateId/consensuses')
+  listConsensuses(
+    @Param('debateId') debateId: string,
+    @Req() request: Request & { user?: AuthenticatedUser },
+  ) {
+    return this.debatesService.listConsensuses(debateId, request.user?.id);
   }
 
   @UseGuards(JwtAuthGuard)
