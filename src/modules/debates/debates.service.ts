@@ -54,7 +54,9 @@ export class DebatesService {
 
   async create(userId: string, dto: CreateDebateDto) {
     if (dto.closeConditionType === 'TIME_LIMIT' && !dto.closeAt) {
-      throw new BadRequestException('TIME_LIMIT 종료 조건에는 closeAt이 필요합니다.');
+      throw new BadRequestException(
+        'TIME_LIMIT 종료 조건에는 closeAt이 필요합니다.',
+      );
     }
 
     const tags = this.normalizeTags(dto.tags);
@@ -146,7 +148,9 @@ export class DebatesService {
 
     return {
       success: true,
-      debates: bookmarks.map((bookmark) => this.withParticipantCount(bookmark.debate)),
+      debates: bookmarks.map((bookmark) =>
+        this.withParticipantCount(bookmark.debate),
+      ),
       page,
       limit,
       totalCount,
@@ -157,7 +161,9 @@ export class DebatesService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const where = this.buildWhere(query, archivedOnly);
-    const sort = archivedOnly ? query.sort ?? 'archivedAt' : query.sort ?? 'createdAt';
+    const sort = archivedOnly
+      ? (query.sort ?? 'archivedAt')
+      : (query.sort ?? 'createdAt');
 
     const [debates, totalCount] = await this.prisma.$transaction([
       this.prisma.debate.findMany({
@@ -258,7 +264,9 @@ export class DebatesService {
   }
 
   async unbookmark(debateId: string, userId: string) {
-    await this.prisma.debateBookmark.deleteMany({ where: { userId, debateId } });
+    await this.prisma.debateBookmark.deleteMany({
+      where: { userId, debateId },
+    });
     return { success: true };
   }
 
@@ -275,7 +283,9 @@ export class DebatesService {
   }
 
   async unsubscribe(debateId: string, userId: string) {
-    await this.prisma.debateSubscription.deleteMany({ where: { userId, debateId } });
+    await this.prisma.debateSubscription.deleteMany({
+      where: { userId, debateId },
+    });
     return { success: true };
   }
 
@@ -352,7 +362,10 @@ export class DebatesService {
     await this.ensureDebateExists(debateId);
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const where = { debateId, status: 'VISIBLE' as const };
+    const where: Prisma.PostWhereInput = {
+      debateId,
+      status: { in: ['VISIBLE', 'DELETED'] },
+    };
 
     const [posts, totalCount] = await this.prisma.$transaction([
       this.prisma.post.findMany({
@@ -387,10 +400,17 @@ export class DebatesService {
     const source = await this.getSelectionSource(dto.sourceType, dto.sourceId);
 
     if (source.debateId !== debateId) {
-      throw new BadRequestException('선택 대상이 요청한 토론에 속하지 않습니다.');
+      throw new BadRequestException(
+        '선택 대상이 요청한 토론에 속하지 않습니다.',
+      );
     }
 
-    this.validateSelection(source.content, dto.selectedText, dto.startOffset, dto.endOffset);
+    this.validateSelection(
+      source.content,
+      dto.selectedText,
+      dto.startOffset,
+      dto.endOffset,
+    );
 
     const selectionTarget = await this.prisma.selectionTarget.create({
       data: {
@@ -407,7 +427,11 @@ export class DebatesService {
     return { success: true, selectionTarget };
   }
 
-  async createConsensus(debateId: string, userId: string, dto: CreateConsensusDto) {
+  async createConsensus(
+    debateId: string,
+    userId: string,
+    dto: CreateConsensusDto,
+  ) {
     await this.ensureDebateOpen(debateId);
     await this.ensureSelectionTarget(debateId, dto.selectionTargetId);
     await this.ensureNoOpenConsensus(dto.selectionTargetId);
@@ -436,7 +460,10 @@ export class DebatesService {
     return { success: true, consensus };
   }
 
-  private buildWhere(query: ListDebatesDto, archivedOnly: boolean): Prisma.DebateWhereInput {
+  private buildWhere(
+    query: ListDebatesDto,
+    archivedOnly: boolean,
+  ): Prisma.DebateWhereInput {
     const where: Prisma.DebateWhereInput = {};
 
     if (archivedOnly) {
@@ -503,7 +530,9 @@ export class DebatesService {
     });
   }
 
-  private withParticipantCount<T extends { _count?: { participants: number } }>(debate: T) {
+  private withParticipantCount<T extends { _count?: { participants: number } }>(
+    debate: T,
+  ) {
     const { _count, ...rest } = debate;
 
     return {
@@ -512,7 +541,10 @@ export class DebatesService {
     };
   }
 
-  private async getSelectionSource(sourceType: SelectionSource, sourceId: string) {
+  private async getSelectionSource(
+    sourceType: SelectionSource,
+    sourceId: string,
+  ) {
     if (sourceType === 'POST') {
       const post = await this.prisma.post.findUnique({
         where: { id: sourceId },
@@ -545,12 +577,20 @@ export class DebatesService {
     }
 
     if (sourceContent.slice(startOffset, endOffset) !== selectedText) {
-      console.log('sourceContent:', sourceContent.slice(startOffset, endOffset));
-      throw new BadRequestException('선택한 문자열이 원문과 일치하지 않습니다.');
+      console.log(
+        'sourceContent:',
+        sourceContent.slice(startOffset, endOffset),
+      );
+      throw new BadRequestException(
+        '선택한 문자열이 원문과 일치하지 않습니다.',
+      );
     }
   }
 
-  private async ensureSelectionTarget(debateId: string, selectionTargetId?: string) {
+  private async ensureSelectionTarget(
+    debateId: string,
+    selectionTargetId?: string,
+  ) {
     if (!selectionTargetId) {
       return;
     }
@@ -562,7 +602,9 @@ export class DebatesService {
       throw new NotFoundException('선택 대상을 찾을 수 없습니다.');
     }
     if (selection.debateId !== debateId) {
-      throw new BadRequestException('선택 대상이 요청한 토론에 속하지 않습니다.');
+      throw new BadRequestException(
+        '선택 대상이 요청한 토론에 속하지 않습니다.',
+      );
     }
   }
 
@@ -573,17 +615,25 @@ export class DebatesService {
       select: { id: true },
     });
     if (existing) {
-      throw new ConflictException('이미 진행 중인 합의안이 있는 선택 영역입니다.');
+      throw new ConflictException(
+        '이미 진행 중인 합의안이 있는 선택 영역입니다.',
+      );
     }
   }
 
   private normalizeTags(tags?: string[]) {
     return Array.from(
-      new Set((tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean)),
+      new Set(
+        (tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean),
+      ),
     );
   }
 
-  private async notifySubscribersOfConsensus(debateId: string, actorId: string, consensusId: string) {
+  private async notifySubscribersOfConsensus(
+    debateId: string,
+    actorId: string,
+    consensusId: string,
+  ) {
     const subscriptions = await this.prisma.debateSubscription.findMany({
       where: { debateId, userId: { not: actorId } },
       select: { userId: true },
