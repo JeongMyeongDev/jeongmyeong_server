@@ -29,13 +29,19 @@ export class DebatesController {
 
   @UseGuards(JwtAuthGuard)
   @Get('my')
-  findMyDebates(@CurrentUser() user: AuthenticatedUser, @Query() query: ListDebatesDto) {
+  findMyDebates(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListDebatesDto,
+  ) {
     return this.debatesService.findMyDebates(user.id, query);
   }
 
   @UseGuards(JwtAuthGuard)
   @Get('bookmarks')
-  findMyBookmarks(@CurrentUser() user: AuthenticatedUser, @Query() query: ListDebatesDto) {
+  findMyBookmarks(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListDebatesDto,
+  ) {
     return this.debatesService.findMyBookmarks(user.id, query);
   }
 
@@ -57,43 +63,69 @@ export class DebatesController {
 
   @UseGuards(JwtAuthGuard)
   @Post(':debateId/participants')
-  join(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+  join(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.debatesService.join(debateId, user.id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':debateId/bookmark')
-  bookmark(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+  bookmark(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.debatesService.bookmark(debateId, user.id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':debateId/bookmark')
-  unbookmark(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+  unbookmark(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.debatesService.unbookmark(debateId, user.id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':debateId/subscription')
-  subscribe(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+  subscribe(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.debatesService.subscribe(debateId, user.id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Delete(':debateId/subscription')
-  unsubscribe(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+  unsubscribe(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.debatesService.unsubscribe(debateId, user.id);
   }
 
   @UseGuards(JwtAuthGuard)
   @Post(':debateId/archive')
-  archive(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+  archive(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.debatesService.archive(debateId, user.id, user.role);
   }
 
   @Get(':debateId/posts')
-  listPosts(@Param('debateId') debateId: string, @Query() query: ListDebatesDto) {
+  listPosts(
+    @Param('debateId') debateId: string,
+    @Query() query: ListDebatesDto,
+  ) {
     return this.debatesService.listPosts(debateId, query);
+  }
+
+  @Get(':debateId/selection-targets')
+  listSelectionTargets(@Param('debateId') debateId: string) {
+    return this.debatesService.listSelectionTargets(debateId);
   }
 
   @UseGuards(JwtAuthGuard)

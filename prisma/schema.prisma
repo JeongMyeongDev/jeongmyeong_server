@@ -209,6 +209,7 @@ model Consensus {
   selectionTarget   SelectionTarget @relation(fields: [selectionTargetId], references: [id])
   creatorId         String          @map("creator_id")
   creator           User            @relation(fields: [creatorId], references: [id])
+  term              String          @default("")
   title             String
   content           String
   status            ConsensusStatus @default(OPEN)

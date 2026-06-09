@@ -45,6 +45,20 @@ const debateSummarySelect = {
   },
 } satisfies Prisma.DebateSelect;
 
+const selectionTargetSelect = {
+  id: true,
+  debateId: true,
+  sourceType: true,
+  sourceId: true,
+  selectedText: true,
+  startOffset: true,
+  endOffset: true,
+  creator: {
+    select: { id: true, nickname: true, profileImage: true },
+  },
+  createdAt: true,
+} satisfies Prisma.SelectionTargetSelect;
+
 @Injectable()
 export class DebatesService {
   constructor(
@@ -391,6 +405,18 @@ export class DebatesService {
     return { success: true, posts, page, limit, totalCount };
   }
 
+  async listSelectionTargets(debateId: string) {
+    await this.ensureDebateExists(debateId);
+
+    const selectionTargets = await this.prisma.selectionTarget.findMany({
+      where: { debateId },
+      orderBy: { createdAt: 'desc' },
+      select: selectionTargetSelect,
+    });
+
+    return { success: true, selectionTargets };
+  }
+
   async createSelectionTarget(
     debateId: string,
     userId: string,
@@ -422,6 +448,7 @@ export class DebatesService {
         startOffset: dto.startOffset,
         endOffset: dto.endOffset,
       },
+      select: selectionTargetSelect,
     });
 
     return { success: true, selectionTarget };
@@ -548,20 +575,26 @@ export class DebatesService {
     if (sourceType === 'POST') {
       const post = await this.prisma.post.findUnique({
         where: { id: sourceId },
-        select: { debateId: true, content: true },
+        select: { debateId: true, content: true, status: true },
       });
       if (!post) {
         throw new NotFoundException('의견을 찾을 수 없습니다.');
+      }
+      if (post.status !== 'VISIBLE') {
+        throw new BadRequestException('선택할 수 없는 의견입니다.');
       }
       return post;
     }
 
     const comment = await this.prisma.comment.findUnique({
       where: { id: sourceId },
-      select: { debateId: true, content: true },
+      select: { debateId: true, content: true, status: true },
     });
     if (!comment) {
       throw new NotFoundException('댓글을 찾을 수 없습니다.');
+    }
+    if (comment.status !== 'VISIBLE') {
+      throw new BadRequestException('선택할 수 없는 댓글입니다.');
     }
     return comment;
   }

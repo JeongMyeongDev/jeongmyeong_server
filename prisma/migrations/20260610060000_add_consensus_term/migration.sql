@@ -1,0 +1,1 @@
+ALTER TABLE "consensuses" ADD COLUMN "term" TEXT NOT NULL DEFAULT '';
