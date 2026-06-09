@@ -70,7 +70,6 @@ export class PostsService {
     const comments = await this.prisma.comment.findMany({
       where: {
         postId,
-        parentCommentId: null,
         status: 'VISIBLE',
       },
       orderBy: { createdAt: 'asc' },
