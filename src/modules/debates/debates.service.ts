@@ -59,6 +59,28 @@ const selectionTargetSelect = {
   createdAt: true,
 } satisfies Prisma.SelectionTargetSelect;
 
+const consensusSelect = {
+  id: true,
+  debateId: true,
+  selectionTargetId: true,
+  creatorId: true,
+  term: true,
+  title: true,
+  content: true,
+  status: true,
+  resultSummary: true,
+  approvedAt: true,
+  closedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  creator: {
+    select: { id: true, nickname: true, profileImage: true },
+  },
+  selectionTarget: {
+    select: selectionTargetSelect,
+  },
+} satisfies Prisma.ConsensusSelect;
+
 @Injectable()
 export class DebatesService {
   constructor(
@@ -417,6 +439,25 @@ export class DebatesService {
     return { success: true, selectionTargets };
   }
 
+  async listConsensuses(debateId: string, userId?: string) {
+    await this.ensureDebateExists(debateId);
+
+    const consensuses = await this.prisma.consensus.findMany({
+      where: { debateId },
+      orderBy: { createdAt: 'desc' },
+      select: consensusSelect,
+    });
+
+    return {
+      success: true,
+      consensuses: await Promise.all(
+        consensuses.map((consensus) =>
+          this.withConsensusVoteSummary(consensus, userId),
+        ),
+      ),
+    };
+  }
+
   async createSelectionTarget(
     debateId: string,
     userId: string,
@@ -437,6 +478,24 @@ export class DebatesService {
       dto.startOffset,
       dto.endOffset,
     );
+
+    const existingSelectionTarget = await this.prisma.selectionTarget.findFirst(
+      {
+        where: {
+          debateId,
+          sourceType: dto.sourceType,
+          sourceId: dto.sourceId,
+          selectedText: dto.selectedText,
+          startOffset: dto.startOffset,
+          endOffset: dto.endOffset,
+        },
+        select: selectionTargetSelect,
+      },
+    );
+
+    if (existingSelectionTarget) {
+      return { success: true, selectionTarget: existingSelectionTarget };
+    }
 
     const selectionTarget = await this.prisma.selectionTarget.create({
       data: {
@@ -461,30 +520,30 @@ export class DebatesService {
   ) {
     await this.ensureDebateOpen(debateId);
     await this.ensureSelectionTarget(debateId, dto.selectionTargetId);
-    await this.ensureNoOpenConsensus(dto.selectionTargetId);
+    await this.ensureNoDuplicateConsensus(
+      dto.selectionTargetId,
+      dto.title,
+      dto.content,
+    );
 
     const consensus = await this.prisma.consensus.create({
       data: {
         debateId,
         creatorId: userId,
         selectionTargetId: dto.selectionTargetId,
+        term: dto.term,
         title: dto.title,
         content: dto.content,
       },
-      select: {
-        id: true,
-        debateId: true,
-        selectionTargetId: true,
-        creatorId: true,
-        title: true,
-        content: true,
-        status: true,
-      },
+      select: consensusSelect,
     });
 
     await this.notifySubscribersOfConsensus(debateId, userId, consensus.id);
 
-    return { success: true, consensus };
+    return {
+      success: true,
+      consensus: await this.withConsensusVoteSummary(consensus, userId),
+    };
   }
 
   private buildWhere(
@@ -652,6 +711,73 @@ export class DebatesService {
         '이미 진행 중인 합의안이 있는 선택 영역입니다.',
       );
     }
+  }
+
+  private async ensureNoDuplicateConsensus(
+    selectionTargetId: string,
+    title: string,
+    content: string,
+  ) {
+    const existing = await this.prisma.consensus.findFirst({
+      where: { selectionTargetId, title, content },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException('동일한 합의안이 이미 제안되어 있습니다.');
+    }
+  }
+
+  private async withConsensusVoteSummary<
+    T extends { id: string; votes?: never },
+  >(consensus: T, userId?: string) {
+    const [approveCount, rejectCount, commentCount, myVote] =
+      await this.prisma.$transaction([
+        this.prisma.consensusVote.count({
+          where: { consensusId: consensus.id, voteType: 'APPROVE' },
+        }),
+        this.prisma.consensusVote.count({
+          where: { consensusId: consensus.id, voteType: 'REJECT' },
+        }),
+        this.prisma.consensusVote.count({
+          where: {
+            consensusId: consensus.id,
+            OR: [{ voteType: 'COMMENT' }, { comment: { not: null } }],
+          },
+        }),
+        userId
+          ? this.prisma.consensusVote.findUnique({
+              where: {
+                consensusId_userId: { consensusId: consensus.id, userId },
+              },
+              select: {
+                id: true,
+                consensusId: true,
+                userId: true,
+                voteType: true,
+                comment: true,
+                updatedAt: true,
+              },
+            })
+          : this.prisma.consensusVote.findFirst({
+              where: { id: '__no_vote__' },
+              select: {
+                id: true,
+                consensusId: true,
+                userId: true,
+                voteType: true,
+                comment: true,
+                updatedAt: true,
+              },
+            }),
+      ]);
+
+    return {
+      ...consensus,
+      approveCount,
+      rejectCount,
+      commentCount,
+      myVote,
+    };
   }
 
   private normalizeTags(tags?: string[]) {

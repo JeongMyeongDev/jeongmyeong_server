@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { CurrentUser } from '../../common/auth/authenticated-user';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
@@ -28,7 +36,11 @@ export class ConsensusesController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateSelectionConsensusDto,
   ) {
-    return this.consensusesService.createFromSelectionTarget(selectionTargetId, user.id, dto);
+    return this.consensusesService.createFromSelectionTarget(
+      selectionTargetId,
+      user.id,
+      dto,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
