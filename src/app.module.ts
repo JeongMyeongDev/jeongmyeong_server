@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { ConsensusesModule } from './modules/consensuses/consensuses.module';
 import { DebatesModule } from './modules/debates/debates.module';
+import { DefinitionsModule } from './modules/definitions/definitions.module';
 import { HealthModule } from './modules/health/health.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -26,6 +27,7 @@ import { UsersModule } from './modules/users/users.module';
     AuthModule,
     UsersModule,
     DebatesModule,
+    DefinitionsModule,
     PostsModule,
     ConsensusesModule,
     NotificationsModule,

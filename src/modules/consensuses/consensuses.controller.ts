@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -51,5 +52,32 @@ export class ConsensusesController {
     @Body() dto: VoteConsensusDto,
   ) {
     return this.consensusesService.vote(consensusId, user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('consensuses/:consensusId/approve')
+  approve(
+    @Param('consensusId') consensusId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.consensusesService.approve(consensusId, user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('consensuses/:consensusId/reject')
+  reject(
+    @Param('consensusId') consensusId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.consensusesService.reject(consensusId, user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('consensuses/:consensusId/close')
+  close(
+    @Param('consensusId') consensusId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.consensusesService.close(consensusId, user);
   }
 }

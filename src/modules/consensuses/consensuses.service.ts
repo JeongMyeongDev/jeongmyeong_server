@@ -1,9 +1,15 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import {
+  definitionSelect,
+  normalizeDefinitionTerm,
+} from '../definitions/definitions.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSelectionConsensusDto } from './dto/create-selection-consensus.dto';
@@ -186,6 +192,70 @@ export class ConsensusesService {
     };
   }
 
+  async approve(consensusId: string, user: AuthenticatedUser) {
+    const consensus = await this.findFinalizableConsensus(consensusId);
+    this.ensureCanFinalize(consensus, user);
+    if (consensus.debate.status !== 'OPEN') {
+      throw new ConflictException(
+        '종료된 토론에서는 합의안을 확정할 수 없습니다.',
+      );
+    }
+    if (consensus.status !== 'OPEN' && consensus.status !== 'APPROVED') {
+      throw new ConflictException('이미 종료된 합의안입니다.');
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const approvedConsensus = await tx.consensus.update({
+        where: { id: consensusId },
+        data: {
+          status: 'APPROVED',
+          approvedAt: consensus.approvedAt ?? new Date(),
+          closedAt: null,
+        },
+        select: consensusSelect,
+      });
+
+      const existingDefinition = await tx.definition.findFirst({
+        where: { sourceConsensusId: consensusId, status: 'ACTIVE' },
+        select: definitionSelect,
+      });
+
+      const definition =
+        existingDefinition ??
+        (await this.createDefinitionForConsensus(tx, approvedConsensus));
+
+      return { approvedConsensus, definition };
+    });
+
+    return {
+      success: true,
+      message: '합의안이 승인되어 기준 정의로 저장되었습니다.',
+      consensus: await this.withConsensusVoteSummary(
+        result.approvedConsensus,
+        user.id,
+      ),
+      definition: result.definition,
+    };
+  }
+
+  async reject(consensusId: string, user: AuthenticatedUser) {
+    return this.finalizeWithoutDefinition(
+      consensusId,
+      user,
+      'REJECTED',
+      '합의안이 반려되었습니다.',
+    );
+  }
+
+  async close(consensusId: string, user: AuthenticatedUser) {
+    return this.finalizeWithoutDefinition(
+      consensusId,
+      user,
+      'CLOSED',
+      '합의안이 종료되었습니다.',
+    );
+  }
+
   private async ensureNoDuplicateConsensus(
     selectionTargetId: string,
     title: string,
@@ -198,6 +268,96 @@ export class ConsensusesService {
     if (existing) {
       throw new ConflictException('동일한 합의안이 이미 제안되어 있습니다.');
     }
+  }
+
+  private async finalizeWithoutDefinition(
+    consensusId: string,
+    user: AuthenticatedUser,
+    status: 'REJECTED' | 'CLOSED',
+    message: string,
+  ) {
+    const consensus = await this.findFinalizableConsensus(consensusId);
+    this.ensureCanFinalize(consensus, user);
+    if (consensus.debate.status !== 'OPEN') {
+      throw new ConflictException(
+        '종료된 토론에서는 합의안을 확정할 수 없습니다.',
+      );
+    }
+    if (consensus.status !== 'OPEN') {
+      throw new ConflictException('이미 종료된 합의안입니다.');
+    }
+
+    const updatedConsensus = await this.prisma.consensus.update({
+      where: { id: consensusId },
+      data: { status, closedAt: new Date() },
+      select: consensusSelect,
+    });
+
+    return {
+      success: true,
+      message,
+      consensus: await this.withConsensusVoteSummary(updatedConsensus, user.id),
+    };
+  }
+
+  private async findFinalizableConsensus(consensusId: string) {
+    const consensus = await this.prisma.consensus.findUnique({
+      where: { id: consensusId },
+      select: {
+        id: true,
+        creatorId: true,
+        term: true,
+        content: true,
+        status: true,
+        approvedAt: true,
+        selectionTargetId: true,
+        debate: {
+          select: { id: true, creatorId: true, status: true },
+        },
+      },
+    });
+
+    if (!consensus) {
+      throw new NotFoundException('합의안을 찾을 수 없습니다.');
+    }
+
+    return consensus;
+  }
+
+  private ensureCanFinalize(
+    consensus: Awaited<ReturnType<ConsensusesService['findFinalizableConsensus']>>,
+    user: AuthenticatedUser,
+  ) {
+    if (user.role !== 'ADMIN' && consensus.debate.creatorId !== user.id) {
+      throw new ForbiddenException('합의안을 확정할 권한이 없습니다.');
+    }
+  }
+
+  private async createDefinitionForConsensus(
+    tx: Prisma.TransactionClient,
+    consensus: Prisma.ConsensusGetPayload<{ select: typeof consensusSelect }>,
+  ) {
+    const originalTerm = consensus.term.trim() || consensus.selectionTarget.selectedText;
+    const normalizedTerm = normalizeDefinitionTerm(originalTerm);
+
+    return tx.definition.create({
+      data: {
+        term: originalTerm,
+        content: consensus.content,
+        scope: 'IN_DEBATE',
+        sourceDebateId: consensus.debateId,
+        sourceConsensusId: consensus.id,
+        selectionTargetId: consensus.selectionTargetId,
+        creatorId: consensus.creatorId,
+        terms: {
+          create: {
+            originalTerm,
+            normalizedTerm,
+          },
+        },
+      },
+      select: definitionSelect,
+    });
   }
 
   private async withConsensusVoteSummary<
