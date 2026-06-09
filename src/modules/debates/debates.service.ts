@@ -33,6 +33,16 @@ const debateSummarySelect = {
   _count: {
     select: { participants: true },
   },
+  definitions: {
+    where: { status: 'ACTIVE' },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      term: true,
+      content: true,
+      createdAt: true,
+    },
+  },
 } satisfies Prisma.DebateSelect;
 
 @Injectable()
