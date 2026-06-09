@@ -28,6 +28,10 @@ model User {
   definitions          Definition[]
   receivedNotifications Notification[]     @relation("ReceivedNotifications")
   sentNotifications    Notification[]      @relation("SentNotifications")
+  passwordResetTokens  PasswordResetToken[]
+  reports              Report[]
+  bookmarks            DebateBookmark[]
+  subscriptions        DebateSubscription[]
 
   @@map("users")
 }
@@ -43,6 +47,20 @@ model PendingRegistration {
   updatedAt         DateTime @updatedAt @map("updated_at")
 
   @@map("pending_registrations")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 model Debate {
@@ -73,6 +91,8 @@ model Debate {
   definitions             Definition[]
   moderationLogs          ModerationLog[]
   notifications           Notification[]
+  bookmarks               DebateBookmark[]
+  subscriptions           DebateSubscription[]
 
   @@index([creatorId])
   @@index([parentDebateId])
@@ -278,6 +298,49 @@ model ModerationLog {
   @@map("moderation_logs")
 }
 
+model Report {
+  id         String           @id @default(uuid())
+  reporterId String           @map("reporter_id")
+  reporter   User             @relation(fields: [reporterId], references: [id])
+  targetType ReportTargetType @map("target_type")
+  targetId   String           @map("target_id")
+  reason     String
+  status     ReportStatus     @default(OPEN)
+  createdAt  DateTime         @default(now()) @map("created_at")
+  resolvedAt DateTime?        @map("resolved_at")
+
+  @@index([reporterId])
+  @@index([targetType, targetId])
+  @@index([status])
+  @@map("reports")
+}
+
+model DebateBookmark {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  debateId  String   @map("debate_id")
+  debate    Debate   @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, debateId])
+  @@index([debateId])
+  @@map("debate_bookmarks")
+}
+
+model DebateSubscription {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  debateId  String   @map("debate_id")
+  debate    Debate   @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, debateId])
+  @@index([debateId])
+  @@map("debate_subscriptions")
+}
+
 enum UserRole {
   USER
   ADMIN
@@ -367,10 +430,25 @@ enum ModerationActionType {
   RESTORE
 }
 
+enum ReportTargetType {
+  POST
+  COMMENT
+  CONSENSUS
+  DEBATE
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  REJECTED
+}
+
 enum NotificationType {
   COMMENT_ON_POST
   REPLY_TO_COMMENT
   NEW_POST_IN_DEBATE
+  NEW_CONSENSUS_IN_DEBATE
 }
 
 model Notification {

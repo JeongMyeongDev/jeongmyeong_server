@@ -57,6 +57,7 @@ export class DebatesService {
       throw new BadRequestException('TIME_LIMIT 종료 조건에는 closeAt이 필요합니다.');
     }
 
+    const tags = this.normalizeTags(dto.tags);
     const debate = await this.prisma.debate.create({
       data: {
         title: dto.title,
@@ -72,7 +73,7 @@ export class DebatesService {
           },
         },
         tagMaps: {
-          create: (dto.tags ?? []).map((name) => ({
+          create: tags.map((name) => ({
             tag: {
               connectOrCreate: {
                 where: { name },
@@ -123,6 +124,29 @@ export class DebatesService {
     return {
       success: true,
       debates: debates.map((debate) => this.withParticipantCount(debate)),
+      page,
+      limit,
+      totalCount,
+    };
+  }
+
+  async findMyBookmarks(userId: string, query: ListDebatesDto) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const [bookmarks, totalCount] = await this.prisma.$transaction([
+      this.prisma.debateBookmark.findMany({
+        where: { userId },
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: { debate: { select: debateSummarySelect } },
+      }),
+      this.prisma.debateBookmark.count({ where: { userId } }),
+    ]);
+
+    return {
+      success: true,
+      debates: bookmarks.map((bookmark) => this.withParticipantCount(bookmark.debate)),
       page,
       limit,
       totalCount,
@@ -219,6 +243,40 @@ export class DebatesService {
     });
 
     return { success: true, participant, participantCount };
+  }
+
+  async bookmark(debateId: string, userId: string) {
+    await this.ensureDebateExists(debateId);
+    const bookmark = await this.prisma.debateBookmark.upsert({
+      where: { userId_debateId: { userId, debateId } },
+      create: { userId, debateId },
+      update: {},
+      select: { id: true, debateId: true, userId: true, createdAt: true },
+    });
+
+    return { success: true, bookmark };
+  }
+
+  async unbookmark(debateId: string, userId: string) {
+    await this.prisma.debateBookmark.deleteMany({ where: { userId, debateId } });
+    return { success: true };
+  }
+
+  async subscribe(debateId: string, userId: string) {
+    await this.ensureDebateExists(debateId);
+    const subscription = await this.prisma.debateSubscription.upsert({
+      where: { userId_debateId: { userId, debateId } },
+      create: { userId, debateId },
+      update: {},
+      select: { id: true, debateId: true, userId: true, createdAt: true },
+    });
+
+    return { success: true, subscription };
+  }
+
+  async unsubscribe(debateId: string, userId: string) {
+    await this.prisma.debateSubscription.deleteMany({ where: { userId, debateId } });
+    return { success: true };
   }
 
   async archive(debateId: string, userId: string, userRole: string) {
@@ -325,7 +383,7 @@ export class DebatesService {
     userId: string,
     dto: CreateSelectionTargetDto,
   ) {
-    await this.ensureDebateExists(debateId);
+    await this.ensureDebateOpen(debateId);
     const source = await this.getSelectionSource(dto.sourceType, dto.sourceId);
 
     if (source.debateId !== debateId) {
@@ -352,6 +410,7 @@ export class DebatesService {
   async createConsensus(debateId: string, userId: string, dto: CreateConsensusDto) {
     await this.ensureDebateOpen(debateId);
     await this.ensureSelectionTarget(debateId, dto.selectionTargetId);
+    await this.ensureNoOpenConsensus(dto.selectionTargetId);
 
     const consensus = await this.prisma.consensus.create({
       data: {
@@ -371,6 +430,8 @@ export class DebatesService {
         status: true,
       },
     });
+
+    await this.notifySubscribersOfConsensus(debateId, userId, consensus.id);
 
     return { success: true, consensus };
   }
@@ -394,7 +455,7 @@ export class DebatesService {
     if (query.tag) {
       where.tagMaps = {
         some: {
-          tag: { name: query.tag },
+          tag: { name: query.tag.trim().toLowerCase() },
         },
       };
     }
@@ -502,6 +563,40 @@ export class DebatesService {
     }
     if (selection.debateId !== debateId) {
       throw new BadRequestException('선택 대상이 요청한 토론에 속하지 않습니다.');
+    }
+  }
+
+  private async ensureNoOpenConsensus(selectionTargetId?: string) {
+    if (!selectionTargetId) return;
+    const existing = await this.prisma.consensus.findFirst({
+      where: { selectionTargetId, status: 'OPEN' },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException('이미 진행 중인 합의안이 있는 선택 영역입니다.');
+    }
+  }
+
+  private normalizeTags(tags?: string[]) {
+    return Array.from(
+      new Set((tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean)),
+    );
+  }
+
+  private async notifySubscribersOfConsensus(debateId: string, actorId: string, consensusId: string) {
+    const subscriptions = await this.prisma.debateSubscription.findMany({
+      where: { debateId, userId: { not: actorId } },
+      select: { userId: true },
+    });
+
+    for (const subscription of subscriptions) {
+      void this.notificationsService.createNotification({
+        recipientId: subscription.userId,
+        actorId,
+        type: 'NEW_CONSENSUS_IN_DEBATE',
+        debateId,
+        referenceId: consensusId,
+      });
     }
   }
 }

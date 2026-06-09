@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
+import { PrismaService } from '../../modules/prisma/prisma.service';
 import { AuthenticatedUser } from './authenticated-user';
 
 type JwtPayload = AuthenticatedUser & {
@@ -14,10 +15,15 @@ type JwtPayload = AuthenticatedUser & {
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request & { user?: AuthenticatedUser }>();
+    const request = context
+      .switchToHttp()
+      .getRequest<Request & { user?: AuthenticatedUser }>();
     const token = this.extractToken(request);
 
     if (!token) {
@@ -28,13 +34,25 @@ export class JwtAuthGuard implements CanActivate {
       const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
         secret: process.env.JWT_SECRET,
       });
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { id: true, email: true, role: true, status: true },
+      });
+
+      if (!user || user.status !== 'ACTIVE') {
+        throw new UnauthorizedException('활성화된 사용자만 이용할 수 있습니다.');
+      }
+
       request.user = {
-        id: payload.sub,
-        email: payload.email,
-        role: payload.role,
+        id: user.id,
+        email: user.email,
+        role: user.role,
       };
       return true;
-    } catch {
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException('유효하지 않은 인증 토큰입니다.');
     }
   }

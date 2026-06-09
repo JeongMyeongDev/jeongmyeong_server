@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
@@ -32,6 +33,12 @@ export class DebatesController {
     return this.debatesService.findMyDebates(user.id, query);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('bookmarks')
+  findMyBookmarks(@CurrentUser() user: AuthenticatedUser, @Query() query: ListDebatesDto) {
+    return this.debatesService.findMyBookmarks(user.id, query);
+  }
+
   @Get()
   findAll(@Query() query: ListDebatesDto) {
     return this.debatesService.findAll(query);
@@ -52,6 +59,30 @@ export class DebatesController {
   @Post(':debateId/participants')
   join(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.debatesService.join(debateId, user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':debateId/bookmark')
+  bookmark(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.debatesService.bookmark(debateId, user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':debateId/bookmark')
+  unbookmark(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.debatesService.unbookmark(debateId, user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':debateId/subscription')
+  subscribe(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.debatesService.subscribe(debateId, user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':debateId/subscription')
+  unsubscribe(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.debatesService.unsubscribe(debateId, user.id);
   }
 
   @UseGuards(JwtAuthGuard)

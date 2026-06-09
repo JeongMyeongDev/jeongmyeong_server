@@ -5,9 +5,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
+import { UpdateCommentDto } from './dto/update-comment.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 
 @Injectable()
@@ -23,15 +24,14 @@ export class PostsService {
       select: { authorId: true, status: true },
     });
 
-    if (!post) {
-      throw new NotFoundException('의견을 찾을 수 없습니다.');
-    }
+    if (!post) throw new NotFoundException('의견을 찾을 수 없습니다.');
     if (post.status !== 'VISIBLE') {
-      throw new ConflictException('삭제된 의견은 수정할 수 없습니다.');
+      throw new ConflictException('삭제되었거나 숨겨진 의견은 수정할 수 없습니다.');
     }
     if (post.authorId !== userId && userRole !== 'ADMIN') {
       throw new ForbiddenException('수정 권한이 없습니다.');
     }
+    await this.ensureNoSelectionTarget('POST', postId);
 
     const updated = await this.prisma.post.update({
       where: { id: postId },
@@ -48,12 +48,14 @@ export class PostsService {
       select: { authorId: true, status: true },
     });
 
-    if (!post) {
-      throw new NotFoundException('의견을 찾을 수 없습니다.');
+    if (!post) throw new NotFoundException('의견을 찾을 수 없습니다.');
+    if (post.status !== 'VISIBLE') {
+      throw new ConflictException('이미 삭제되었거나 숨겨진 의견입니다.');
     }
     if (post.authorId !== userId && userRole !== 'ADMIN') {
       throw new ForbiddenException('삭제 권한이 없습니다.');
     }
+    await this.ensureNoSelectionTarget('POST', postId);
 
     const updated = await this.prisma.post.update({
       where: { id: postId },
@@ -68,25 +70,22 @@ export class PostsService {
     await this.ensurePostExists(postId);
 
     const comments = await this.prisma.comment.findMany({
-      where: {
-        postId,
-        status: 'VISIBLE',
-      },
+      where: { postId, status: 'VISIBLE' },
       orderBy: { createdAt: 'asc' },
       select: {
         id: true,
         debateId: true,
         postId: true,
         parentCommentId: true,
+        authorId: true,
         content: true,
         status: true,
         createdAt: true,
+        updatedAt: true,
         author: {
           select: { id: true, nickname: true, profileImage: true },
         },
-        _count: {
-          select: { replies: true },
-        },
+        _count: { select: { replies: true } },
       },
     });
 
@@ -140,9 +139,7 @@ export class PostsService {
         },
       });
 
-      if (!dto.selection) {
-        return { comment, selectionTarget: null };
-      }
+      if (!dto.selection) return { comment, selectionTarget: null };
 
       const selectionTarget = await tx.selectionTarget.create({
         data: {
@@ -173,14 +170,65 @@ export class PostsService {
     return { success: true, ...result };
   }
 
+  async updateComment(
+    commentId: string,
+    userId: string,
+    userRole: string,
+    dto: UpdateCommentDto,
+  ) {
+    const comment = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+      select: { authorId: true, status: true },
+    });
+
+    if (!comment) throw new NotFoundException('댓글을 찾을 수 없습니다.');
+    if (comment.status !== 'VISIBLE') {
+      throw new ConflictException('삭제되었거나 숨겨진 댓글은 수정할 수 없습니다.');
+    }
+    if (comment.authorId !== userId && userRole !== 'ADMIN') {
+      throw new ForbiddenException('수정 권한이 없습니다.');
+    }
+    await this.ensureNoSelectionTarget('COMMENT', commentId);
+
+    const updated = await this.prisma.comment.update({
+      where: { id: commentId },
+      data: { content: dto.content },
+      select: { id: true, content: true, updatedAt: true },
+    });
+
+    return { success: true, comment: updated };
+  }
+
+  async deleteComment(commentId: string, userId: string, userRole: string) {
+    const comment = await this.prisma.comment.findUnique({
+      where: { id: commentId },
+      select: { authorId: true, status: true },
+    });
+
+    if (!comment) throw new NotFoundException('댓글을 찾을 수 없습니다.');
+    if (comment.status !== 'VISIBLE') {
+      throw new ConflictException('이미 삭제되었거나 숨겨진 댓글입니다.');
+    }
+    if (comment.authorId !== userId && userRole !== 'ADMIN') {
+      throw new ForbiddenException('삭제 권한이 없습니다.');
+    }
+    await this.ensureNoSelectionTarget('COMMENT', commentId);
+
+    const updated = await this.prisma.comment.update({
+      where: { id: commentId },
+      data: { status: 'DELETED', deletedAt: new Date() },
+      select: { id: true, status: true, deletedAt: true },
+    });
+
+    return { success: true, comment: updated };
+  }
+
   private async ensurePostExists(postId: string) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
       select: { id: true },
     });
-    if (!post) {
-      throw new NotFoundException('의견을 찾을 수 없습니다.');
-    }
+    if (!post) throw new NotFoundException('의견을 찾을 수 없습니다.');
   }
 
   private async ensureParentComment(postId: string, parentCommentId: string): Promise<string> {
@@ -198,14 +246,22 @@ export class PostsService {
     sourceContent: string,
     selection?: { selectedText: string; startOffset: number; endOffset: number },
   ) {
-    if (!selection) {
-      return;
-    }
+    if (!selection) return;
     if (selection.startOffset >= selection.endOffset || selection.endOffset > sourceContent.length) {
       throw new BadRequestException('선택 영역 범위가 올바르지 않습니다.');
     }
     if (sourceContent.slice(selection.startOffset, selection.endOffset) !== selection.selectedText) {
       throw new BadRequestException('선택한 문자열이 원문과 일치하지 않습니다.');
+    }
+  }
+
+  private async ensureNoSelectionTarget(sourceType: 'POST' | 'COMMENT', sourceId: string) {
+    const selectionTarget = await this.prisma.selectionTarget.findFirst({
+      where: { sourceType, sourceId },
+      select: { id: true },
+    });
+    if (selectionTarget) {
+      throw new ConflictException('선택/합의에 연결된 글은 수정하거나 삭제할 수 없습니다.');
     }
   }
 }

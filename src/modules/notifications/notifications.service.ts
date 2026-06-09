@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { NotificationType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ListNotificationsDto } from './dto/list-notifications.dto';
 
 export interface CreateNotificationInput {
   recipientId: string;
@@ -14,12 +15,15 @@ export interface CreateNotificationInput {
 export class NotificationsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findMyNotifications(userId: string) {
-    const [notifications, unreadCount] = await this.prisma.$transaction([
+  async findMyNotifications(userId: string, query: ListNotificationsDto = {}) {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const [notifications, unreadCount, totalCount] = await this.prisma.$transaction([
       this.prisma.notification.findMany({
         where: { recipientId: userId },
         orderBy: { createdAt: 'desc' },
-        take: 50,
+        skip: (page - 1) * limit,
+        take: limit,
         select: {
           id: true,
           type: true,
@@ -34,9 +38,20 @@ export class NotificationsService {
       this.prisma.notification.count({
         where: { recipientId: userId, isRead: false },
       }),
+      this.prisma.notification.count({
+        where: { recipientId: userId },
+      }),
     ]);
 
-    return { success: true, notifications, unreadCount };
+    return {
+      success: true,
+      notifications,
+      unreadCount,
+      page,
+      limit,
+      totalCount,
+      hasMore: page * limit < totalCount,
+    };
   }
 
   async markAsRead(notificationId: string, userId: string) {
