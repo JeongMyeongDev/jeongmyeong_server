@@ -1,15 +1,19 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { CurrentUser } from '../../common/auth/authenticated-user';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/auth/optional-jwt-auth.guard';
 import { CreateConsensusDto } from './dto/create-consensus.dto';
 import { CreateDebateDto } from './dto/create-debate.dto';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -28,8 +32,20 @@ export class DebatesController {
 
   @UseGuards(JwtAuthGuard)
   @Get('my')
-  findMyDebates(@CurrentUser() user: AuthenticatedUser, @Query() query: ListDebatesDto) {
+  findMyDebates(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListDebatesDto,
+  ) {
     return this.debatesService.findMyDebates(user.id, query);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('bookmarks')
+  findMyBookmarks(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListDebatesDto,
+  ) {
+    return this.debatesService.findMyBookmarks(user.id, query);
   }
 
   @Get()
@@ -50,19 +66,78 @@ export class DebatesController {
 
   @UseGuards(JwtAuthGuard)
   @Post(':debateId/participants')
-  join(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+  join(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.debatesService.join(debateId, user.id);
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post(':debateId/bookmark')
+  bookmark(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.debatesService.bookmark(debateId, user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':debateId/bookmark')
+  unbookmark(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.debatesService.unbookmark(debateId, user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':debateId/subscription')
+  subscribe(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.debatesService.subscribe(debateId, user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':debateId/subscription')
+  unsubscribe(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.debatesService.unsubscribe(debateId, user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post(':debateId/archive')
-  archive(@Param('debateId') debateId: string, @CurrentUser() user: AuthenticatedUser) {
+  archive(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
     return this.debatesService.archive(debateId, user.id, user.role);
   }
 
   @Get(':debateId/posts')
-  listPosts(@Param('debateId') debateId: string, @Query() query: ListDebatesDto) {
+  listPosts(
+    @Param('debateId') debateId: string,
+    @Query() query: ListDebatesDto,
+  ) {
     return this.debatesService.listPosts(debateId, query);
+  }
+
+  @Get(':debateId/selection-targets')
+  listSelectionTargets(@Param('debateId') debateId: string) {
+    return this.debatesService.listSelectionTargets(debateId);
+  }
+
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get(':debateId/consensuses')
+  listConsensuses(
+    @Param('debateId') debateId: string,
+    @Req() request: Request & { user?: AuthenticatedUser },
+  ) {
+    return this.debatesService.listConsensuses(debateId, request.user?.id);
   }
 
   @UseGuards(JwtAuthGuard)

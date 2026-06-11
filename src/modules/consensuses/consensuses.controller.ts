@@ -1,7 +1,18 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request } from 'express';
 import { CurrentUser } from '../../common/auth/authenticated-user';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../../common/auth/optional-jwt-auth.guard';
 import { ConsensusesService } from './consensuses.service';
 import { CreateSelectionConsensusDto } from './dto/create-selection-consensus.dto';
 import { VoteConsensusDto } from './dto/vote-consensus.dto';
@@ -10,6 +21,15 @@ import { VoteConsensusDto } from './dto/vote-consensus.dto';
 export class ConsensusesController {
   constructor(private readonly consensusesService: ConsensusesService) {}
 
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get('consensuses/:consensusId')
+  findOne(
+    @Param('consensusId') consensusId: string,
+    @Req() request: Request & { user?: AuthenticatedUser },
+  ) {
+    return this.consensusesService.findOne(consensusId, request.user?.id);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post('selection-targets/:selectionTargetId/consensuses')
   createFromSelectionTarget(
@@ -17,7 +37,11 @@ export class ConsensusesController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateSelectionConsensusDto,
   ) {
-    return this.consensusesService.createFromSelectionTarget(selectionTargetId, user.id, dto);
+    return this.consensusesService.createFromSelectionTarget(
+      selectionTargetId,
+      user.id,
+      dto,
+    );
   }
 
   @UseGuards(JwtAuthGuard)
@@ -28,5 +52,32 @@ export class ConsensusesController {
     @Body() dto: VoteConsensusDto,
   ) {
     return this.consensusesService.vote(consensusId, user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('consensuses/:consensusId/approve')
+  approve(
+    @Param('consensusId') consensusId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.consensusesService.approve(consensusId, user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('consensuses/:consensusId/reject')
+  reject(
+    @Param('consensusId') consensusId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.consensusesService.reject(consensusId, user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('consensuses/:consensusId/close')
+  close(
+    @Param('consensusId') consensusId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.consensusesService.close(consensusId, user);
   }
 }
