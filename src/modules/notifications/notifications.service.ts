@@ -1,5 +1,6 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { NotificationType } from '@prisma/client';
+import { normalizePagination, paginationMeta } from '../../common/utils/pagination.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListNotificationsDto } from './dto/list-notifications.dto';
 
@@ -16,13 +17,12 @@ export class NotificationsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findMyNotifications(userId: string, query: ListNotificationsDto = {}) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const { page, limit, skip } = normalizePagination(query);
     const [notifications, unreadCount, totalCount] = await this.prisma.$transaction([
       this.prisma.notification.findMany({
         where: { recipientId: userId },
         orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
+        skip,
         take: limit,
         select: {
           id: true,
@@ -44,12 +44,9 @@ export class NotificationsService {
     ]);
 
     return {
-      success: true,
       notifications,
       unreadCount,
-      page,
-      limit,
-      totalCount,
+      ...paginationMeta(page, limit, totalCount),
       hasMore: page * limit < totalCount,
     };
   }
@@ -71,8 +68,6 @@ export class NotificationsService {
       where: { id: notificationId },
       data: { isRead: true },
     });
-
-    return { success: true };
   }
 
   async markAllAsRead(userId: string) {
@@ -80,8 +75,6 @@ export class NotificationsService {
       where: { recipientId: userId, isRead: false },
       data: { isRead: true },
     });
-
-    return { success: true };
   }
 
   async createNotification(input: CreateNotificationInput) {

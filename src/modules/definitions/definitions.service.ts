@@ -63,7 +63,7 @@ export class DefinitionsService {
       select: definitionSelect,
     });
 
-    return { success: true, definitions };
+    return { definitions };
   }
 
   async findOne(definitionId: string) {
@@ -76,7 +76,7 @@ export class DefinitionsService {
       throw new NotFoundException('기준 정의를 찾을 수 없습니다.');
     }
 
-    return { success: true, definition };
+    return { definition };
   }
 
   async findByDebate(debateId: string) {
@@ -95,7 +95,7 @@ export class DefinitionsService {
       select: definitionSelect,
     });
 
-    return { success: true, definitions };
+    return { definitions };
   }
 }
 

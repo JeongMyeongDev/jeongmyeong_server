@@ -7,6 +7,10 @@ import {
 import { Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import {
+  consensusSelect,
+  withConsensusVoteSummary,
+} from '../../common/constants/select.constants';
+import {
   definitionSelect,
   normalizeDefinitionTerm,
 } from '../definitions/definitions.service';
@@ -14,40 +18,6 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSelectionConsensusDto } from './dto/create-selection-consensus.dto';
 import { VoteConsensusDto } from './dto/vote-consensus.dto';
-
-const consensusSelect = {
-  id: true,
-  debateId: true,
-  selectionTargetId: true,
-  creatorId: true,
-  term: true,
-  title: true,
-  content: true,
-  status: true,
-  resultSummary: true,
-  approvedAt: true,
-  closedAt: true,
-  createdAt: true,
-  updatedAt: true,
-  creator: {
-    select: { id: true, nickname: true, profileImage: true },
-  },
-  selectionTarget: {
-    select: {
-      id: true,
-      debateId: true,
-      sourceType: true,
-      sourceId: true,
-      selectedText: true,
-      startOffset: true,
-      endOffset: true,
-      creator: {
-        select: { id: true, nickname: true, profileImage: true },
-      },
-      createdAt: true,
-    },
-  },
-} satisfies Prisma.ConsensusSelect;
 
 @Injectable()
 export class ConsensusesService {
@@ -83,8 +53,7 @@ export class ConsensusesService {
     }
 
     return {
-      success: true,
-      consensus: await this.withConsensusVoteSummary(consensus, userId),
+      consensus: await withConsensusVoteSummary(this.prisma, consensus, userId),
     };
   }
 
@@ -105,9 +74,7 @@ export class ConsensusesService {
       throw new NotFoundException('선택 영역을 찾을 수 없습니다.');
     }
     if (selectionTarget.debate.status !== 'OPEN') {
-      throw new ConflictException(
-        '종료된 토론에는 합의안을 생성할 수 없습니다.',
-      );
+      throw new ConflictException('종료된 토론에는 합의안을 생성할 수 없습니다.');
     }
     await this.ensureNoDuplicateConsensus(
       selectionTargetId,
@@ -127,15 +94,10 @@ export class ConsensusesService {
       select: consensusSelect,
     });
 
-    await this.notifySubscribers(
-      selectionTarget.debateId,
-      userId,
-      consensus.id,
-    );
+    this.notifySubscribers(selectionTarget.debateId, userId, consensus.id);
 
     return {
-      success: true,
-      consensus: await this.withConsensusVoteSummary(consensus, userId),
+      consensus: await withConsensusVoteSummary(this.prisma, consensus, userId),
     };
   }
 
@@ -158,16 +120,8 @@ export class ConsensusesService {
 
     const vote = await this.prisma.consensusVote.upsert({
       where: { consensusId_userId: { consensusId, userId } },
-      create: {
-        consensusId,
-        userId,
-        voteType: dto.voteType,
-        comment: dto.comment,
-      },
-      update: {
-        voteType: dto.voteType,
-        comment: dto.comment,
-      },
+      create: { consensusId, userId, voteType: dto.voteType, comment: dto.comment },
+      update: { voteType: dto.voteType, comment: dto.comment },
       select: {
         id: true,
         consensusId: true,
@@ -184,10 +138,9 @@ export class ConsensusesService {
     });
 
     return {
-      success: true,
       vote,
       consensus: updatedConsensus
-        ? await this.withConsensusVoteSummary(updatedConsensus, userId)
+        ? await withConsensusVoteSummary(this.prisma, updatedConsensus, userId)
         : null,
     };
   }
@@ -196,9 +149,7 @@ export class ConsensusesService {
     const consensus = await this.findFinalizableConsensus(consensusId);
     this.ensureCanFinalize(consensus, user);
     if (consensus.debate.status !== 'OPEN') {
-      throw new ConflictException(
-        '종료된 토론에서는 합의안을 확정할 수 없습니다.',
-      );
+      throw new ConflictException('종료된 토론에서는 합의안을 확정할 수 없습니다.');
     }
     if (consensus.status !== 'OPEN' && consensus.status !== 'APPROVED') {
       throw new ConflictException('이미 종료된 합의안입니다.');
@@ -228,9 +179,9 @@ export class ConsensusesService {
     });
 
     return {
-      success: true,
       message: '합의안이 승인되어 기준 정의로 저장되었습니다.',
-      consensus: await this.withConsensusVoteSummary(
+      consensus: await withConsensusVoteSummary(
+        this.prisma,
         result.approvedConsensus,
         user.id,
       ),
@@ -256,6 +207,8 @@ export class ConsensusesService {
     );
   }
 
+  // ─── Private Helpers ──────────────────────────────────────────
+
   private async ensureNoDuplicateConsensus(
     selectionTargetId: string,
     title: string,
@@ -279,9 +232,7 @@ export class ConsensusesService {
     const consensus = await this.findFinalizableConsensus(consensusId);
     this.ensureCanFinalize(consensus, user);
     if (consensus.debate.status !== 'OPEN') {
-      throw new ConflictException(
-        '종료된 토론에서는 합의안을 확정할 수 없습니다.',
-      );
+      throw new ConflictException('종료된 토론에서는 합의안을 확정할 수 없습니다.');
     }
     if (consensus.status !== 'OPEN') {
       throw new ConflictException('이미 종료된 합의안입니다.');
@@ -294,9 +245,8 @@ export class ConsensusesService {
     });
 
     return {
-      success: true,
       message,
-      consensus: await this.withConsensusVoteSummary(updatedConsensus, user.id),
+      consensus: await withConsensusVoteSummary(this.prisma, updatedConsensus, user.id),
     };
   }
 
@@ -350,56 +300,11 @@ export class ConsensusesService {
         selectionTargetId: consensus.selectionTargetId,
         creatorId: consensus.creatorId,
         terms: {
-          create: {
-            originalTerm,
-            normalizedTerm,
-          },
+          create: { originalTerm, normalizedTerm },
         },
       },
       select: definitionSelect,
     });
-  }
-
-  private async withConsensusVoteSummary<
-    T extends { id: string; votes?: unknown },
-  >(consensus: T, userId?: string) {
-    const [approveCount, rejectCount, commentCount] =
-      await this.prisma.$transaction([
-        this.prisma.consensusVote.count({
-          where: { consensusId: consensus.id, voteType: 'APPROVE' },
-        }),
-        this.prisma.consensusVote.count({
-          where: { consensusId: consensus.id, voteType: 'REJECT' },
-        }),
-        this.prisma.consensusVote.count({
-          where: {
-            consensusId: consensus.id,
-            OR: [{ voteType: 'COMMENT' }, { comment: { not: null } }],
-          },
-        }),
-      ]);
-
-    const myVote = userId
-      ? await this.prisma.consensusVote.findUnique({
-          where: { consensusId_userId: { consensusId: consensus.id, userId } },
-          select: {
-            id: true,
-            consensusId: true,
-            userId: true,
-            voteType: true,
-            comment: true,
-            updatedAt: true,
-          },
-        })
-      : null;
-
-    return {
-      ...consensus,
-      approveCount,
-      rejectCount,
-      commentCount,
-      myVote,
-    };
   }
 
   private async notifySubscribers(

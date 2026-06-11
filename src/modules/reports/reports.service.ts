@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { normalizePagination, paginationMeta } from '../../common/utils/pagination.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateReportDto } from './dto/create-report.dto';
 import { ListReportsDto } from './dto/list-reports.dto';
@@ -24,17 +25,16 @@ export class ReportsService {
       },
     });
 
-    return { success: true, report };
+    return { report };
   }
 
   async findAll(query: ListReportsDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const { page, limit, skip } = normalizePagination(query);
     const where = query.status ? { status: query.status } : {};
     const [reports, totalCount] = await this.prisma.$transaction([
       this.prisma.report.findMany({
         where,
-        skip: (page - 1) * limit,
+        skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: { reporter: { select: { id: true, nickname: true, email: true } } },
@@ -42,7 +42,7 @@ export class ReportsService {
       this.prisma.report.count({ where }),
     ]);
 
-    return { success: true, reports, page, limit, totalCount };
+    return { reports, ...paginationMeta(page, limit, totalCount) };
   }
 
   async updateStatus(id: string, dto: UpdateReportStatusDto) {
@@ -57,7 +57,7 @@ export class ReportsService {
       },
     });
 
-    return { success: true, report };
+    return { report };
   }
 
   private async ensureTargetExists(targetType: CreateReportDto['targetType'], targetId: string) {

@@ -5,81 +5,24 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DebateStatus, Prisma, SelectionSource } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+import { Prisma, SelectionSource } from '@prisma/client';
+import {
+  consensusSelect,
+  debateListSelect,
+  debateSummarySelect,
+  selectionTargetSelect,
+  withConsensusVoteSummary,
+  withParticipantCount,
+} from '../../common/constants/select.constants';
+import { normalizePagination, paginationMeta } from '../../common/utils/pagination.util';
+import { validateSelection } from '../../common/utils/selection.util';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateConsensusDto } from './dto/create-consensus.dto';
 import { CreateDebateDto } from './dto/create-debate.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { CreateSelectionTargetDto } from './dto/create-selection-target.dto';
 import { ListDebatesDto } from './dto/list-debates.dto';
-
-const debateSummarySelect = {
-  id: true,
-  title: true,
-  description: true,
-  debateType: true,
-  status: true,
-  createdAt: true,
-  archivedAt: true,
-  tagMaps: {
-    select: {
-      tag: { select: { id: true, name: true } },
-    },
-  },
-  creator: {
-    select: { id: true, nickname: true, profileImage: true },
-  },
-  _count: {
-    select: { participants: true },
-  },
-  definitions: {
-    where: { status: 'ACTIVE' },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      id: true,
-      term: true,
-      content: true,
-      createdAt: true,
-    },
-  },
-} satisfies Prisma.DebateSelect;
-
-const selectionTargetSelect = {
-  id: true,
-  debateId: true,
-  sourceType: true,
-  sourceId: true,
-  selectedText: true,
-  startOffset: true,
-  endOffset: true,
-  creator: {
-    select: { id: true, nickname: true, profileImage: true },
-  },
-  createdAt: true,
-} satisfies Prisma.SelectionTargetSelect;
-
-const consensusSelect = {
-  id: true,
-  debateId: true,
-  selectionTargetId: true,
-  creatorId: true,
-  term: true,
-  title: true,
-  content: true,
-  status: true,
-  resultSummary: true,
-  approvedAt: true,
-  closedAt: true,
-  createdAt: true,
-  updatedAt: true,
-  creator: {
-    select: { id: true, nickname: true, profileImage: true },
-  },
-  selectionTarget: {
-    select: selectionTargetSelect,
-  },
-} satisfies Prisma.ConsensusSelect;
 
 @Injectable()
 export class DebatesService {
@@ -105,18 +48,12 @@ export class DebatesService {
         closeAt: dto.closeAt ? new Date(dto.closeAt) : undefined,
         creatorId: userId,
         participants: {
-          create: {
-            userId,
-            roleInDebate: 'CREATOR',
-          },
+          create: { userId, roleInDebate: 'CREATOR' },
         },
         tagMaps: {
           create: tags.map((name) => ({
             tag: {
-              connectOrCreate: {
-                where: { name },
-                create: { name },
-              },
+              connectOrCreate: { where: { name }, create: { name } },
             },
           })),
         },
@@ -124,14 +61,12 @@ export class DebatesService {
       select: debateSummarySelect,
     });
 
-    return { success: true, debate: this.withParticipantCount(debate) };
+    return { debate: withParticipantCount(debate) };
   }
 
   async findMyDebates(userId: string, query: ListDebatesDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const { page, limit, skip } = normalizePagination(query);
     const sort = query.sort ?? 'createdAt';
-
     const where = {
       creatorId: userId,
       ...(query.status ? { status: query.status } : {}),
@@ -140,41 +75,26 @@ export class DebatesService {
     const [debates, totalCount] = await this.prisma.$transaction([
       this.prisma.debate.findMany({
         where,
-        skip: (page - 1) * limit,
+        skip,
         take: limit,
         orderBy: { [sort]: query.direction ?? 'desc' },
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          debateType: true,
-          status: true,
-          createdAt: true,
-          archivedAt: true,
-          creator: { select: { id: true, nickname: true } },
-          tagMaps: { select: { tag: { select: { id: true, name: true } } } },
-          _count: { select: { participants: true } },
-        },
+        select: debateListSelect,
       }),
       this.prisma.debate.count({ where }),
     ]);
 
     return {
-      success: true,
-      debates: debates.map((debate) => this.withParticipantCount(debate)),
-      page,
-      limit,
-      totalCount,
+      debates: debates.map(withParticipantCount),
+      ...paginationMeta(page, limit, totalCount),
     };
   }
 
   async findMyBookmarks(userId: string, query: ListDebatesDto) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const { page, limit, skip } = normalizePagination(query);
     const [bookmarks, totalCount] = await this.prisma.$transaction([
       this.prisma.debateBookmark.findMany({
         where: { userId },
-        skip: (page - 1) * limit,
+        skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
         select: { debate: { select: debateSummarySelect } },
@@ -183,19 +103,13 @@ export class DebatesService {
     ]);
 
     return {
-      success: true,
-      debates: bookmarks.map((bookmark) =>
-        this.withParticipantCount(bookmark.debate),
-      ),
-      page,
-      limit,
-      totalCount,
+      debates: bookmarks.map((b) => withParticipantCount(b.debate)),
+      ...paginationMeta(page, limit, totalCount),
     };
   }
 
   async findAll(query: ListDebatesDto, archivedOnly = false) {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const { page, limit, skip } = normalizePagination(query);
     const where = this.buildWhere(query, archivedOnly);
     const sort = archivedOnly
       ? (query.sort ?? 'archivedAt')
@@ -204,39 +118,17 @@ export class DebatesService {
     const [debates, totalCount] = await this.prisma.$transaction([
       this.prisma.debate.findMany({
         where,
-        skip: (page - 1) * limit,
+        skip,
         take: limit,
         orderBy: { [sort]: query.direction ?? 'desc' },
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          debateType: true,
-          status: true,
-          createdAt: true,
-          archivedAt: true,
-          creator: {
-            select: { id: true, nickname: true },
-          },
-          tagMaps: {
-            select: {
-              tag: { select: { id: true, name: true } },
-            },
-          },
-          _count: {
-            select: { participants: true },
-          },
-        },
+        select: debateListSelect,
       }),
       this.prisma.debate.count({ where }),
     ]);
 
     return {
-      success: true,
-      debates: debates.map((debate) => this.withParticipantCount(debate)),
-      page,
-      limit,
-      totalCount,
+      debates: debates.map(withParticipantCount),
+      ...paginationMeta(page, limit, totalCount),
     };
   }
 
@@ -250,23 +142,16 @@ export class DebatesService {
       throw new NotFoundException('토론을 찾을 수 없습니다.');
     }
 
-    return { success: true, debate: this.withParticipantCount(debate) };
+    return { debate: withParticipantCount(debate) };
   }
 
   async join(debateId: string, userId: string) {
     await this.ensureDebateOpen(debateId);
 
     const participant = await this.prisma.debateParticipant.upsert({
-      where: {
-        debateId_userId: { debateId, userId },
-      },
-      create: {
-        debateId,
-        userId,
-      },
-      update: {
-        lastReadAt: new Date(),
-      },
+      where: { debateId_userId: { debateId, userId } },
+      create: { debateId, userId },
+      update: { lastReadAt: new Date() },
       select: {
         id: true,
         debateId: true,
@@ -284,7 +169,7 @@ export class DebatesService {
       where: { debateId },
     });
 
-    return { success: true, participant, participantCount };
+    return { participant, participantCount };
   }
 
   async bookmark(debateId: string, userId: string) {
@@ -296,14 +181,13 @@ export class DebatesService {
       select: { id: true, debateId: true, userId: true, createdAt: true },
     });
 
-    return { success: true, bookmark };
+    return { bookmark };
   }
 
   async unbookmark(debateId: string, userId: string) {
     await this.prisma.debateBookmark.deleteMany({
       where: { userId, debateId },
     });
-    return { success: true };
   }
 
   async subscribe(debateId: string, userId: string) {
@@ -315,14 +199,13 @@ export class DebatesService {
       select: { id: true, debateId: true, userId: true, createdAt: true },
     });
 
-    return { success: true, subscription };
+    return { subscription };
   }
 
   async unsubscribe(debateId: string, userId: string) {
     await this.prisma.debateSubscription.deleteMany({
       where: { userId, debateId },
     });
-    return { success: true };
   }
 
   async archive(debateId: string, userId: string, userRole: string) {
@@ -334,15 +217,12 @@ export class DebatesService {
     if (!debate) {
       throw new NotFoundException('토론을 찾을 수 없습니다.');
     }
-
     if (debate.creatorId !== userId && userRole !== 'ADMIN') {
       throw new ForbiddenException('아카이브 권한이 없습니다.');
     }
-
     if (debate.status === 'ARCHIVED') {
       throw new ConflictException('이미 아카이브된 토론입니다.');
     }
-
     if (debate.status !== 'CLOSED') {
       throw new BadRequestException('종결된 토론만 아카이브할 수 있습니다.');
     }
@@ -353,7 +233,7 @@ export class DebatesService {
       select: { id: true, status: true, archivedAt: true },
     });
 
-    return { success: true, debate: updated };
+    return { debate: updated };
   }
 
   async createPost(debateId: string, userId: string, dto: CreatePostDto) {
@@ -376,28 +256,14 @@ export class DebatesService {
       },
     });
 
-    const participants = await this.prisma.debateParticipant.findMany({
-      where: { debateId, userId: { not: userId } },
-      select: { userId: true },
-    });
+    this.notifyParticipants(debateId, userId, 'NEW_POST_IN_DEBATE', post.id);
 
-    for (const p of participants) {
-      void this.notificationsService.createNotification({
-        recipientId: p.userId,
-        actorId: userId,
-        type: 'NEW_POST_IN_DEBATE',
-        debateId,
-        referenceId: post.id,
-      });
-    }
-
-    return { success: true, post };
+    return { post };
   }
 
   async listPosts(debateId: string, query: ListDebatesDto) {
     await this.ensureDebateExists(debateId);
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const { page, limit, skip } = normalizePagination(query);
     const where: Prisma.PostWhereInput = {
       debateId,
       status: { in: ['VISIBLE', 'DELETED'] },
@@ -406,7 +272,7 @@ export class DebatesService {
     const [posts, totalCount] = await this.prisma.$transaction([
       this.prisma.post.findMany({
         where,
-        skip: (page - 1) * limit,
+        skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
         select: {
@@ -424,7 +290,7 @@ export class DebatesService {
       this.prisma.post.count({ where }),
     ]);
 
-    return { success: true, posts, page, limit, totalCount };
+    return { posts, ...paginationMeta(page, limit, totalCount) };
   }
 
   async listSelectionTargets(debateId: string) {
@@ -436,7 +302,7 @@ export class DebatesService {
       select: selectionTargetSelect,
     });
 
-    return { success: true, selectionTargets };
+    return { selectionTargets };
   }
 
   async listConsensuses(debateId: string, userId?: string) {
@@ -449,11 +315,8 @@ export class DebatesService {
     });
 
     return {
-      success: true,
       consensuses: await Promise.all(
-        consensuses.map((consensus) =>
-          this.withConsensusVoteSummary(consensus, userId),
-        ),
+        consensuses.map((c) => withConsensusVoteSummary(this.prisma, c, userId)),
       ),
     };
   }
@@ -467,34 +330,25 @@ export class DebatesService {
     const source = await this.getSelectionSource(dto.sourceType, dto.sourceId);
 
     if (source.debateId !== debateId) {
-      throw new BadRequestException(
-        '선택 대상이 요청한 토론에 속하지 않습니다.',
-      );
+      throw new BadRequestException('선택 대상이 요청한 토론에 속하지 않습니다.');
     }
 
-    this.validateSelection(
-      source.content,
-      dto.selectedText,
-      dto.startOffset,
-      dto.endOffset,
-    );
+    validateSelection(source.content, dto.selectedText, dto.startOffset, dto.endOffset);
 
-    const existingSelectionTarget = await this.prisma.selectionTarget.findFirst(
-      {
-        where: {
-          debateId,
-          sourceType: dto.sourceType,
-          sourceId: dto.sourceId,
-          selectedText: dto.selectedText,
-          startOffset: dto.startOffset,
-          endOffset: dto.endOffset,
-        },
-        select: selectionTargetSelect,
+    const existing = await this.prisma.selectionTarget.findFirst({
+      where: {
+        debateId,
+        sourceType: dto.sourceType,
+        sourceId: dto.sourceId,
+        selectedText: dto.selectedText,
+        startOffset: dto.startOffset,
+        endOffset: dto.endOffset,
       },
-    );
+      select: selectionTargetSelect,
+    });
 
-    if (existingSelectionTarget) {
-      return { success: true, selectionTarget: existingSelectionTarget };
+    if (existing) {
+      return { selectionTarget: existing };
     }
 
     const selectionTarget = await this.prisma.selectionTarget.create({
@@ -510,7 +364,7 @@ export class DebatesService {
       select: selectionTargetSelect,
     });
 
-    return { success: true, selectionTarget };
+    return { selectionTarget };
   }
 
   async createConsensus(
@@ -538,13 +392,14 @@ export class DebatesService {
       select: consensusSelect,
     });
 
-    await this.notifySubscribersOfConsensus(debateId, userId, consensus.id);
+    this.notifySubscribers(debateId, userId, consensus.id);
 
     return {
-      success: true,
-      consensus: await this.withConsensusVoteSummary(consensus, userId),
+      consensus: await withConsensusVoteSummary(this.prisma, consensus, userId),
     };
   }
+
+  // ─── Private Helpers ──────────────────────────────────────────
 
   private buildWhere(
     query: ListDebatesDto,
@@ -553,7 +408,7 @@ export class DebatesService {
     const where: Prisma.DebateWhereInput = {};
 
     if (archivedOnly) {
-      where.status = DebateStatus.ARCHIVED;
+      where.status = 'ARCHIVED';
     } else if (query.status) {
       where.status = query.status;
     }
@@ -567,9 +422,7 @@ export class DebatesService {
 
     if (query.tag) {
       where.tagMaps = {
-        some: {
-          tag: { name: query.tag.trim().toLowerCase() },
-        },
+        some: { tag: { name: query.tag.trim().toLowerCase() } },
       };
     }
 
@@ -605,26 +458,10 @@ export class DebatesService {
 
   private async ensureParticipant(debateId: string, userId: string) {
     await this.prisma.debateParticipant.upsert({
-      where: {
-        debateId_userId: { debateId, userId },
-      },
-      create: {
-        debateId,
-        userId,
-      },
+      where: { debateId_userId: { debateId, userId } },
+      create: { debateId, userId },
       update: {},
     });
-  }
-
-  private withParticipantCount<T extends { _count?: { participants: number } }>(
-    debate: T,
-  ) {
-    const { _count, ...rest } = debate;
-
-    return {
-      ...rest,
-      participantCount: _count?.participants ?? 0,
-    };
   }
 
   private async getSelectionSource(
@@ -636,12 +473,8 @@ export class DebatesService {
         where: { id: sourceId },
         select: { debateId: true, content: true, status: true },
       });
-      if (!post) {
-        throw new NotFoundException('의견을 찾을 수 없습니다.');
-      }
-      if (post.status !== 'VISIBLE') {
-        throw new BadRequestException('선택할 수 없는 의견입니다.');
-      }
+      if (!post) throw new NotFoundException('의견을 찾을 수 없습니다.');
+      if (post.status !== 'VISIBLE') throw new BadRequestException('선택할 수 없는 의견입니다.');
       return post;
     }
 
@@ -649,67 +482,23 @@ export class DebatesService {
       where: { id: sourceId },
       select: { debateId: true, content: true, status: true },
     });
-    if (!comment) {
-      throw new NotFoundException('댓글을 찾을 수 없습니다.');
-    }
-    if (comment.status !== 'VISIBLE') {
-      throw new BadRequestException('선택할 수 없는 댓글입니다.');
-    }
+    if (!comment) throw new NotFoundException('댓글을 찾을 수 없습니다.');
+    if (comment.status !== 'VISIBLE') throw new BadRequestException('선택할 수 없는 댓글입니다.');
     return comment;
-  }
-
-  private validateSelection(
-    sourceContent: string,
-    selectedText: string,
-    startOffset: number,
-    endOffset: number,
-  ) {
-    if (startOffset >= endOffset || endOffset > sourceContent.length) {
-      throw new BadRequestException('선택 영역 범위가 올바르지 않습니다.');
-    }
-
-    if (sourceContent.slice(startOffset, endOffset) !== selectedText) {
-      console.log(
-        'sourceContent:',
-        sourceContent.slice(startOffset, endOffset),
-      );
-      throw new BadRequestException(
-        '선택한 문자열이 원문과 일치하지 않습니다.',
-      );
-    }
   }
 
   private async ensureSelectionTarget(
     debateId: string,
     selectionTargetId?: string,
   ) {
-    if (!selectionTargetId) {
-      return;
-    }
+    if (!selectionTargetId) return;
     const selection = await this.prisma.selectionTarget.findUnique({
       where: { id: selectionTargetId },
       select: { debateId: true },
     });
-    if (!selection) {
-      throw new NotFoundException('선택 대상을 찾을 수 없습니다.');
-    }
+    if (!selection) throw new NotFoundException('선택 대상을 찾을 수 없습니다.');
     if (selection.debateId !== debateId) {
-      throw new BadRequestException(
-        '선택 대상이 요청한 토론에 속하지 않습니다.',
-      );
-    }
-  }
-
-  private async ensureNoOpenConsensus(selectionTargetId?: string) {
-    if (!selectionTargetId) return;
-    const existing = await this.prisma.consensus.findFirst({
-      where: { selectionTargetId, status: 'OPEN' },
-      select: { id: true },
-    });
-    if (existing) {
-      throw new ConflictException(
-        '이미 진행 중인 합의안이 있는 선택 영역입니다.',
-      );
+      throw new BadRequestException('선택 대상이 요청한 토론에 속하지 않습니다.');
     }
   }
 
@@ -727,59 +516,6 @@ export class DebatesService {
     }
   }
 
-  private async withConsensusVoteSummary<
-    T extends { id: string; votes?: never },
-  >(consensus: T, userId?: string) {
-    const [approveCount, rejectCount, commentCount, myVote] =
-      await this.prisma.$transaction([
-        this.prisma.consensusVote.count({
-          where: { consensusId: consensus.id, voteType: 'APPROVE' },
-        }),
-        this.prisma.consensusVote.count({
-          where: { consensusId: consensus.id, voteType: 'REJECT' },
-        }),
-        this.prisma.consensusVote.count({
-          where: {
-            consensusId: consensus.id,
-            OR: [{ voteType: 'COMMENT' }, { comment: { not: null } }],
-          },
-        }),
-        userId
-          ? this.prisma.consensusVote.findUnique({
-              where: {
-                consensusId_userId: { consensusId: consensus.id, userId },
-              },
-              select: {
-                id: true,
-                consensusId: true,
-                userId: true,
-                voteType: true,
-                comment: true,
-                updatedAt: true,
-              },
-            })
-          : this.prisma.consensusVote.findFirst({
-              where: { id: '__no_vote__' },
-              select: {
-                id: true,
-                consensusId: true,
-                userId: true,
-                voteType: true,
-                comment: true,
-                updatedAt: true,
-              },
-            }),
-      ]);
-
-    return {
-      ...consensus,
-      approveCount,
-      rejectCount,
-      commentCount,
-      myVote,
-    };
-  }
-
   private normalizeTags(tags?: string[]) {
     return Array.from(
       new Set(
@@ -788,7 +524,29 @@ export class DebatesService {
     );
   }
 
-  private async notifySubscribersOfConsensus(
+  private async notifyParticipants(
+    debateId: string,
+    actorId: string,
+    type: 'NEW_POST_IN_DEBATE',
+    referenceId: string,
+  ) {
+    const participants = await this.prisma.debateParticipant.findMany({
+      where: { debateId, userId: { not: actorId } },
+      select: { userId: true },
+    });
+
+    for (const p of participants) {
+      void this.notificationsService.createNotification({
+        recipientId: p.userId,
+        actorId,
+        type,
+        debateId,
+        referenceId,
+      });
+    }
+  }
+
+  private async notifySubscribers(
     debateId: string,
     actorId: string,
     consensusId: string,

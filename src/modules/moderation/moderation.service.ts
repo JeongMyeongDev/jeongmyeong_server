@@ -8,6 +8,8 @@ import { ModerationActionType, ModerationTargetType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateModerationActionDto } from './dto/create-moderation-action.dto';
 
+type ContentStatus = 'VISIBLE' | 'HIDDEN' | 'DELETED';
+
 @Injectable()
 export class ModerationService {
   constructor(private readonly prisma: PrismaService) {}
@@ -28,7 +30,7 @@ export class ModerationService {
       },
     });
 
-    return { success: true, moderationLog: log };
+    return { moderationLog: log };
   }
 
   private async ensureCanModerate(actorId: string, actorRole: string, debateId: string) {
@@ -74,54 +76,46 @@ export class ModerationService {
   }
 
   private async applyAction(dto: CreateModerationActionDto) {
-    if (dto.targetType === 'POST') {
-      await this.applyPostAction(dto.targetId, dto.actionType);
-      return;
-    }
-    if (dto.targetType === 'COMMENT') {
-      await this.applyCommentAction(dto.targetId, dto.actionType);
-      return;
-    }
-    if (dto.targetType === 'DEBATE') {
-      await this.applyDebateAction(dto.targetId, dto.actionType);
-      return;
-    }
-    if (dto.targetType === 'CONSENSUS') {
-      await this.applyConsensusAction(dto.targetId, dto.actionType);
-      return;
+    const { targetType, targetId, actionType } = dto;
+
+    switch (targetType) {
+      case 'POST':
+        return this.applyContentAction(this.prisma.post, targetId, actionType, '의견');
+      case 'COMMENT':
+        return this.applyContentAction(this.prisma.comment, targetId, actionType, '댓글');
+      case 'DEBATE':
+        return this.applyDebateAction(targetId, actionType);
+      case 'CONSENSUS':
+        return this.applyConsensusAction(targetId, actionType);
     }
   }
 
-  private async applyPostAction(targetId: string, actionType: ModerationActionType) {
-    if (actionType === 'HIDE') {
-      await this.prisma.post.update({ where: { id: targetId }, data: { status: 'HIDDEN' } });
-      return;
-    }
-    if (actionType === 'RESTORE') {
-      await this.prisma.post.update({ where: { id: targetId }, data: { status: 'VISIBLE', deletedAt: null } });
-      return;
-    }
-    if (actionType === 'DELETE') {
-      await this.prisma.post.update({ where: { id: targetId }, data: { status: 'DELETED', deletedAt: new Date() } });
-      return;
-    }
-    throw new BadRequestException('의견에는 해당 운영 액션을 적용할 수 없습니다.');
-  }
+  /**
+   * POST와 COMMENT에 공통으로 적용되는 HIDE/RESTORE/DELETE 로직
+   */
+  private async applyContentAction(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    model: any,
+    targetId: string,
+    actionType: ModerationActionType,
+    label: string,
+  ) {
+    const statusMap: Partial<Record<ModerationActionType, ContentStatus>> = {
+      HIDE: 'HIDDEN',
+      RESTORE: 'VISIBLE',
+      DELETE: 'DELETED',
+    };
 
-  private async applyCommentAction(targetId: string, actionType: ModerationActionType) {
-    if (actionType === 'HIDE') {
-      await this.prisma.comment.update({ where: { id: targetId }, data: { status: 'HIDDEN' } });
-      return;
+    const newStatus = statusMap[actionType];
+    if (!newStatus) {
+      throw new BadRequestException(`${label}에는 해당 운영 액션을 적용할 수 없습니다.`);
     }
-    if (actionType === 'RESTORE') {
-      await this.prisma.comment.update({ where: { id: targetId }, data: { status: 'VISIBLE', deletedAt: null } });
-      return;
-    }
-    if (actionType === 'DELETE') {
-      await this.prisma.comment.update({ where: { id: targetId }, data: { status: 'DELETED', deletedAt: new Date() } });
-      return;
-    }
-    throw new BadRequestException('댓글에는 해당 운영 액션을 적용할 수 없습니다.');
+
+    const data: { status: ContentStatus; deletedAt?: Date | null } = { status: newStatus };
+    if (actionType === 'DELETE') data.deletedAt = new Date();
+    if (actionType === 'RESTORE') data.deletedAt = null;
+
+    await model.update({ where: { id: targetId }, data });
   }
 
   private async applyDebateAction(targetId: string, actionType: ModerationActionType) {

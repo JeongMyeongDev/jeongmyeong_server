@@ -37,10 +37,7 @@ export class AuthService {
   async register(registerDto: RegisterDto) {
     const { email, nickname, password, passwordConfirm } = registerDto;
 
-    if (password !== passwordConfirm) {
-      throw new ConflictException('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
-    }
-
+    this.assertPasswordsMatch(password, passwordConfirm);
     await this.assertUserNotExists(email, nickname);
 
     const existingPendingRegistration = await this.prisma.pendingRegistration.findFirst({
@@ -76,7 +73,6 @@ export class AuthService {
     }
 
     return {
-      success: true,
       message: '인증 메일을 보냈습니다. 이메일 인증을 완료하면 계정이 생성됩니다.',
     };
   }
@@ -109,7 +105,6 @@ export class AuthService {
     if (existingUser?.email === pendingRegistration.email) {
       await this.cleanupPendingRegistration(pendingRegistration.id);
       return {
-        success: true,
         message: '이미 이메일 인증이 완료되었습니다.',
         email: pendingRegistration.email,
       };
@@ -120,31 +115,20 @@ export class AuthService {
       throw new ConflictException('이미 사용 중인 닉네임입니다.');
     }
 
-    try {
-      await this.prisma.$transaction([
-        this.prisma.user.create({
-          data: {
-            email: pendingRegistration.email,
-            nickname: pendingRegistration.nickname,
-            passwordHash: pendingRegistration.passwordHash,
-          },
-        }),
-        this.prisma.pendingRegistration.deleteMany({
-          where: { id: pendingRegistration.id },
-        }),
-      ]);
-    } catch (error: unknown) {
-      if (this.isUniqueConstraintError(error)) {
-        await this.cleanupPendingRegistration(pendingRegistration.id);
-        this.throwUniqueConflict(error);
-      }
-
-      await this.cleanupPendingRegistration(pendingRegistration.id);
-      throw error;
-    }
+    await this.prisma.$transaction([
+      this.prisma.user.create({
+        data: {
+          email: pendingRegistration.email,
+          nickname: pendingRegistration.nickname,
+          passwordHash: pendingRegistration.passwordHash,
+        },
+      }),
+      this.prisma.pendingRegistration.deleteMany({
+        where: { id: pendingRegistration.id },
+      }),
+    ]);
 
     return {
-      success: true,
       message: '이메일 인증이 완료되어 계정이 생성되었습니다.',
       email: pendingRegistration.email,
     };
@@ -158,7 +142,6 @@ export class AuthService {
 
     if (!pendingRegistration) {
       return {
-        success: true,
         message: '인증 대기 중인 계정이 있다면 인증 메일을 다시 보냈습니다.',
       };
     }
@@ -177,7 +160,7 @@ export class AuthService {
       this.createEmailVerificationUrl(verificationToken),
     );
 
-    return { success: true, message: '인증 메일을 다시 보냈습니다.' };
+    return { message: '인증 메일을 다시 보냈습니다.' };
   }
 
   async login(loginDto: LoginDto) {
@@ -212,30 +195,21 @@ export class AuthService {
   async googleSignup(googleSignupDto: GoogleSignupDto) {
     const { idToken, nickname, password, passwordConfirm } = googleSignupDto;
 
-    if (password !== passwordConfirm) {
-      throw new ConflictException('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
-    }
+    this.assertPasswordsMatch(password, passwordConfirm);
 
     const payload = await this.verifyGoogleIdToken(idToken);
     await this.assertUserNotExists(payload.email, nickname);
 
-    try {
-      const user = await this.prisma.user.create({
-        data: {
-          email: payload.email,
-          nickname,
-          passwordHash: await bcrypt.hash(password, 10),
-          profileImage: payload.picture,
-        },
-      });
+    const user = await this.prisma.user.create({
+      data: {
+        email: payload.email,
+        nickname,
+        passwordHash: await bcrypt.hash(password, 10),
+        profileImage: payload.picture,
+      },
+    });
 
-      return this.createLoginResponse(user);
-    } catch (error) {
-      if (this.isUniqueConstraintError(error)) {
-        this.throwUniqueConflict(error);
-      }
-      throw error;
-    }
+    return this.createLoginResponse(user);
   }
 
   async requestPasswordReset(dto: PasswordResetRequestDto) {
@@ -276,13 +250,11 @@ export class AuthService {
     if (!resetToken) {
       throw new BadRequestException('유효하지 않은 비밀번호 재설정 링크입니다.');
     }
-    return { success: true, valid: true };
+    return { valid: true };
   }
 
   async confirmPasswordReset(dto: PasswordResetConfirmDto) {
-    if (dto.password !== dto.passwordConfirm) {
-      throw new ConflictException('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
-    }
+    this.assertPasswordsMatch(dto.password, dto.passwordConfirm);
 
     const resetToken = await this.findUsablePasswordResetToken(dto.token);
     if (!resetToken) {
@@ -300,7 +272,7 @@ export class AuthService {
       }),
     ]);
 
-    return { success: true, message: '비밀번호가 재설정되었습니다. 다시 로그인해 주세요.' };
+    return { message: '비밀번호가 재설정되었습니다. 다시 로그인해 주세요.' };
   }
 
   async getMe(userId: string) {
@@ -320,11 +292,19 @@ export class AuthService {
       throw new NotFoundException('사용자 정보를 찾을 수 없습니다.');
     }
 
-    return { success: true, user };
+    return { user };
   }
 
   logout() {
-    return { success: true, message: '로그아웃되었습니다.' };
+    return { message: '로그아웃되었습니다.' };
+  }
+
+  // ─── Private Helpers ──────────────────────────────────────────
+
+  private assertPasswordsMatch(password: string, passwordConfirm: string) {
+    if (password !== passwordConfirm) {
+      throw new ConflictException('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
+    }
   }
 
   private async assertUserNotExists(email: string, nickname: string) {
@@ -384,7 +364,6 @@ export class AuthService {
     });
 
     return {
-      success: true,
       accessToken,
       user: {
         id: user.id,
@@ -396,33 +375,6 @@ export class AuthService {
 
   private async cleanupPendingRegistration(id: string) {
     await this.prisma.pendingRegistration.deleteMany({ where: { id } });
-  }
-
-  private isUniqueConstraintError(error: unknown) {
-    return (
-      error instanceof Error &&
-      'code' in error &&
-      (error as { code?: string }).code === 'P2002'
-    );
-  }
-
-  private throwUniqueConflict(error: unknown): never {
-    const target = this.getPrismaErrorTarget(error);
-    if (target.some((value) => value.includes('email'))) {
-      throw new ConflictException('이미 사용 중인 이메일입니다.');
-    }
-    if (target.some((value) => value.includes('nickname'))) {
-      throw new ConflictException('이미 사용 중인 닉네임입니다.');
-    }
-
-    throw new ConflictException('이미 존재하는 사용자 정보가 있습니다.');
-  }
-
-  private getPrismaErrorTarget(error: unknown) {
-    const target = (error as { meta?: { target?: unknown } }).meta?.target;
-    if (Array.isArray(target)) return target.map(String);
-    if (typeof target === 'string') return [target];
-    return [];
   }
 
   private createToken() {
@@ -449,7 +401,6 @@ export class AuthService {
 
   private passwordResetRequestedResponse() {
     return {
-      success: true,
       message: '가입된 이메일이라면 비밀번호 재설정 메일을 보냈습니다.',
     };
   }
