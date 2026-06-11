@@ -1,4 +1,5 @@
 import { IsNotEmpty, IsString } from 'class-validator';
+import { IsCommunityText } from '../../../common/validators/community-text.validator';
 
 export class CreateSelectionConsensusDto {
   @IsString()
@@ -11,5 +12,6 @@ export class CreateSelectionConsensusDto {
 
   @IsString()
   @IsNotEmpty()
+  @IsCommunityText()
   content!: string;
 }

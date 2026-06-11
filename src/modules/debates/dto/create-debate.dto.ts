@@ -6,14 +6,17 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
+import { IsCommunityText } from '../../../common/validators/community-text.validator';
 
 export class CreateDebateDto {
   @IsString()
   @IsNotEmpty()
+  @IsCommunityText()
   title!: string;
 
   @IsString()
   @IsNotEmpty()
+  @IsCommunityText()
   description!: string;
 
   @IsIn(['FREE', 'CONSENSUS', 'PROS_CONS'])
@@ -22,6 +25,7 @@ export class CreateDebateDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
+  @IsCommunityText({ each: true })
   tags?: string[];
 
   @IsOptional()
