@@ -7,6 +7,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsCommunityText } from '../../../common/validators/community-text.validator';
 
 class CommentSelectionDto {
   @IsString()
@@ -25,6 +26,7 @@ class CommentSelectionDto {
 export class CreateCommentDto {
   @IsString()
   @IsNotEmpty()
+  @IsCommunityText()
   content!: string;
 
   @IsOptional()

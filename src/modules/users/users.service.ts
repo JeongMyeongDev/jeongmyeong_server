@@ -24,7 +24,7 @@ type MeProfile = Prisma.UserGetPayload<{ select: typeof meProfileSelect }>;
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findPublicProfile(userId: string): Promise<{ success: true; user: PublicProfile }> {
+  async findPublicProfile(userId: string): Promise<{ user: PublicProfile }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: publicProfileSelect,
@@ -34,10 +34,10 @@ export class UsersService {
       throw new NotFoundException('사용자를 찾을 수 없습니다.');
     }
 
-    return { success: true, user };
+    return { user };
   }
 
-  async getMySettings(userId: string): Promise<{ success: true; notificationsEnabled: boolean }> {
+  async getMySettings(userId: string): Promise<{ notificationsEnabled: boolean }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { notificationsEnabled: true },
@@ -47,20 +47,20 @@ export class UsersService {
       throw new NotFoundException('사용자를 찾을 수 없습니다.');
     }
 
-    return { success: true, notificationsEnabled: user.notificationsEnabled };
+    return { notificationsEnabled: user.notificationsEnabled };
   }
 
-  async updateMySettings(userId: string, dto: UpdateSettingsDto): Promise<{ success: true; notificationsEnabled: boolean }> {
+  async updateMySettings(userId: string, dto: UpdateSettingsDto): Promise<{ notificationsEnabled: boolean }> {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { notificationsEnabled: dto.notificationsEnabled },
       select: { notificationsEnabled: true },
     });
 
-    return { success: true, notificationsEnabled: user.notificationsEnabled };
+    return { notificationsEnabled: user.notificationsEnabled };
   }
 
-  async updateMe(userId: string, dto: UpdateMeDto): Promise<{ success: true; user: MeProfile }> {
+  async updateMe(userId: string, dto: UpdateMeDto): Promise<{ user: MeProfile }> {
     if (dto.nickname) {
       const duplicate = await this.prisma.user.findFirst({
         where: { nickname: dto.nickname, NOT: { id: userId } },
@@ -77,6 +77,6 @@ export class UsersService {
       select: meProfileSelect,
     });
 
-    return { success: true, user };
+    return { user };
   }
 }
