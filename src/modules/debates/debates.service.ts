@@ -18,6 +18,10 @@ import { normalizePagination, paginationMeta } from '../../common/utils/paginati
 import { validateSelection } from '../../common/utils/selection.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  DefinitionReferencesService,
+  definitionReferenceSelect,
+} from '../definition-references/definition-references.service';
 import { CreateConsensusDto } from './dto/create-consensus.dto';
 import { CreateDebateDto } from './dto/create-debate.dto';
 import { CreatePostDto } from './dto/create-post.dto';
@@ -29,6 +33,7 @@ export class DebatesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly definitionReferencesService: DefinitionReferencesService,
   ) {}
 
   async create(userId: string, dto: CreateDebateDto) {
@@ -240,20 +245,34 @@ export class DebatesService {
     await this.ensureDebateOpen(debateId);
     await this.ensureParticipant(debateId, userId);
 
-    const post = await this.prisma.post.create({
-      data: {
-        debateId,
-        authorId: userId,
-        content: dto.content,
-      },
-      select: {
-        id: true,
-        debateId: true,
-        authorId: true,
-        content: true,
-        status: true,
-        createdAt: true,
-      },
+    const post = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.post.create({
+        data: {
+          debateId,
+          authorId: userId,
+          content: dto.content,
+        },
+        select: {
+          id: true,
+          debateId: true,
+          authorId: true,
+          content: true,
+          status: true,
+          createdAt: true,
+        },
+      });
+
+      const definitionReferences =
+        await this.definitionReferencesService.createManyForPost(
+          tx,
+          debateId,
+          created.id,
+          created.content,
+          userId,
+          dto.definitionReferences,
+        );
+
+      return { ...created, definitionReferences };
     });
 
     this.notifyParticipants(debateId, userId, 'NEW_POST_IN_DEBATE', post.id);
@@ -284,6 +303,10 @@ export class DebatesService {
           updatedAt: true,
           author: {
             select: { id: true, nickname: true, profileImage: true },
+          },
+          definitionReferences: {
+            orderBy: { startOffset: 'asc' },
+            select: definitionReferenceSelect,
           },
         },
       }),

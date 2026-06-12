@@ -6,6 +6,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { validateSelection } from '../../common/utils/selection.util';
+import {
+  DefinitionReferencesService,
+  definitionReferenceSelect,
+} from '../definition-references/definition-references.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
@@ -17,6 +21,7 @@ export class PostsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly definitionReferencesService: DefinitionReferencesService,
   ) {}
 
   async updatePost(
@@ -28,6 +33,7 @@ export class PostsService {
     const post = await this.findVisiblePost(postId);
     this.assertOwnership(post.authorId, userId, userRole, '수정');
     await this.ensureNoSelectionTarget('POST', postId);
+    await this.ensureDefinitionReferencesRemainValid('POST', postId, dto.content);
 
     const updated = await this.prisma.post.update({
       where: { id: postId },
@@ -72,6 +78,10 @@ export class PostsService {
           select: { id: true, nickname: true, profileImage: true },
         },
         _count: { select: { replies: true } },
+        definitionReferences: {
+          orderBy: { startOffset: 'asc' },
+          select: definitionReferenceSelect,
+        },
       },
     });
 
@@ -132,7 +142,22 @@ export class PostsService {
         },
       });
 
-      if (!dto.selection) return { comment, selectionTarget: null };
+      const definitionReferences =
+        await this.definitionReferencesService.createManyForComment(
+          tx,
+          post.debateId,
+          comment.id,
+          comment.content,
+          userId,
+          dto.definitionReferences,
+        );
+
+      if (!dto.selection) {
+        return {
+          comment: { ...comment, definitionReferences },
+          selectionTarget: null,
+        };
+      }
 
       const selectionTarget = await tx.selectionTarget.create({
         data: {
@@ -147,7 +172,7 @@ export class PostsService {
         select: { id: true },
       });
 
-      return { comment, selectionTarget };
+      return { comment: { ...comment, definitionReferences }, selectionTarget };
     });
 
     const recipientId = parentAuthorId ?? post.authorId;
@@ -172,6 +197,11 @@ export class PostsService {
     const comment = await this.findVisibleComment(commentId);
     this.assertOwnership(comment.authorId, userId, userRole, '수정');
     await this.ensureNoSelectionTarget('COMMENT', commentId);
+    await this.ensureDefinitionReferencesRemainValid(
+      'COMMENT',
+      commentId,
+      dto.content,
+    );
 
     const updated = await this.prisma.comment.update({
       where: { id: commentId },
@@ -271,6 +301,50 @@ export class PostsService {
     if (selectionTarget) {
       throw new ConflictException(
         '선택/합의에 연결된 글은 수정하거나 삭제할 수 없습니다.',
+      );
+    }
+  }
+
+  private async ensureDefinitionReferencesRemainValid(
+    sourceType: 'POST' | 'COMMENT',
+    sourceId: string,
+    nextContent: string,
+  ) {
+    const definitionReferences = await this.prisma.definitionReference.findMany({
+      where:
+        sourceType === 'POST' ? { postId: sourceId } : { commentId: sourceId },
+      select: { selectedText: true, startOffset: true, endOffset: true },
+    });
+
+    for (const reference of definitionReferences) {
+      try {
+        validateSelection(
+          nextContent,
+          reference.selectedText,
+          reference.startOffset,
+          reference.endOffset,
+        );
+      } catch {
+        throw new ConflictException(
+          '정의 참조 위치가 변경되어 수정할 수 없습니다. 연결된 단어는 그대로 두고 다시 시도해 주세요.',
+        );
+      }
+    }
+  }
+
+  private async ensureNoDefinitionReference(
+    sourceType: 'POST' | 'COMMENT',
+    sourceId: string,
+  ) {
+    const definitionReference = await this.prisma.definitionReference.findFirst({
+      where:
+        sourceType === 'POST' ? { postId: sourceId } : { commentId: sourceId },
+      select: { id: true },
+    });
+
+    if (definitionReference) {
+      throw new ConflictException(
+        '이 글은 정의 참조가 포함되어 있어 수정할 수 없습니다.',
       );
     }
   }

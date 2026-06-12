@@ -26,6 +26,7 @@ model User {
   participants         DebateParticipant[]
   moderationLogs       ModerationLog[]
   definitions          Definition[]
+  definitionReferences DefinitionReference[]
   receivedNotifications Notification[]     @relation("ReceivedNotifications")
   sentNotifications    Notification[]      @relation("SentNotifications")
   passwordResetTokens  PasswordResetToken[]
@@ -89,6 +90,7 @@ model Debate {
   selections              SelectionTarget[]
   consensuses             Consensus[]
   definitions             Definition[]
+  definitionReferences     DefinitionReference[]
   moderationLogs          ModerationLog[]
   notifications           Notification[]
   bookmarks               DebateBookmark[]
@@ -149,6 +151,7 @@ model Post {
   updatedAt DateTime   @updatedAt @map("updated_at")
   deletedAt DateTime?  @map("deleted_at")
   comments  Comment[]
+  definitionReferences DefinitionReference[]
 
   @@index([debateId])
   @@index([authorId])
@@ -171,6 +174,7 @@ model Comment {
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
   deletedAt       DateTime?     @map("deleted_at")
+  definitionReferences DefinitionReference[]
 
   @@index([debateId])
   @@index([postId])
@@ -260,6 +264,7 @@ model Definition {
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
   terms             DefinitionTerm[]
+  references        DefinitionReference[]
 
   @@index([term])
   @@index([sourceDebateId])
@@ -279,6 +284,32 @@ model DefinitionTerm {
 
   @@index([normalizedTerm])
   @@map("definition_terms")
+}
+
+model DefinitionReference {
+  id            String                  @id @default(uuid())
+  debateId      String                  @map("debate_id")
+  debate        Debate                  @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  postId        String?                 @map("post_id")
+  post          Post?                   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  commentId     String?                 @map("comment_id")
+  comment       Comment?                @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  definitionId  String                  @map("definition_id")
+  definition    Definition              @relation(fields: [definitionId], references: [id])
+  selectedText  String                  @map("selected_text")
+  startOffset   Int                     @map("start_offset")
+  endOffset     Int                     @map("end_offset")
+  referenceType DefinitionReferenceType @map("reference_type")
+  creatorId     String                  @map("creator_id")
+  creator       User                    @relation(fields: [creatorId], references: [id])
+  createdAt     DateTime                @default(now()) @map("created_at")
+
+  @@index([debateId])
+  @@index([postId])
+  @@index([commentId])
+  @@index([definitionId])
+  @@index([creatorId])
+  @@map("definition_references")
 }
 
 model ModerationLog {
@@ -415,6 +446,11 @@ enum DefinitionScope {
 enum DefinitionStatus {
   ACTIVE
   ARCHIVED
+}
+
+enum DefinitionReferenceType {
+  DEBATE_STANDARD
+  GLOBAL_REFERENCE
 }
 
 enum ModerationTargetType {
