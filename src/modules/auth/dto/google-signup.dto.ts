@@ -1,4 +1,7 @@
-import { IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsNotEmpty, IsString, Matches, MinLength } from 'class-validator';
+
+const NICKNAME_PATTERN = /^(?=.*[\p{L}\p{N}])[\p{L}\p{N}\s]+$/u;
+const NICKNAME_MESSAGE = '닉네임은 한글, 영문, 숫자, 공백만 입력할 수 있습니다.';
 
 export class GoogleSignupDto {
   @IsString()
@@ -7,6 +10,7 @@ export class GoogleSignupDto {
 
   @IsString()
   @IsNotEmpty({ message: '닉네임은 필수 입력값입니다.' })
+  @Matches(NICKNAME_PATTERN, { message: NICKNAME_MESSAGE })
   nickname: string;
 
   @IsString()

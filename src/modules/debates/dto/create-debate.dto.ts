@@ -9,7 +9,7 @@ import {
 } from 'class-validator';
 import { IsCommunityText } from '../../../common/validators/community-text.validator';
 
-const DEBATE_TEXT_PATTERN = /^[\p{L}\p{N}\s]+$/u;
+const DEBATE_TEXT_PATTERN = /^(?=.*[\p{L}\p{N}])[\p{L}\p{N}\s]+$/u;
 const DEBATE_TEXT_MESSAGE = '한글, 영문, 숫자, 공백만 입력할 수 있습니다.';
 
 export class CreateDebateDto {
