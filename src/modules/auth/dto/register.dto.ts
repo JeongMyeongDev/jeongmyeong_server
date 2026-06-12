@@ -1,4 +1,7 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, Matches, MinLength } from 'class-validator';
+
+const NICKNAME_PATTERN = /^(?=.*[\p{L}\p{N}])[\p{L}\p{N}\s]+$/u;
+const NICKNAME_MESSAGE = '닉네임은 한글, 영문, 숫자, 공백만 입력할 수 있습니다.';
 
 export class RegisterDto {
   @IsEmail({}, { message: '올바른 이메일 형식이 아닙니다.' })
@@ -7,6 +10,7 @@ export class RegisterDto {
 
   @IsString()
   @IsNotEmpty({ message: '닉네임은 필수 입력값입니다.' })
+  @Matches(NICKNAME_PATTERN, { message: NICKNAME_MESSAGE })
   nickname!: string;
 
   @IsString()

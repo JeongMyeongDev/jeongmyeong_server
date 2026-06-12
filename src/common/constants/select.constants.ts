@@ -75,6 +75,17 @@ export const debateSummarySelect = {
   creator: {
     select: { id: true, nickname: true, profileImage: true },
   },
+  participants: {
+    orderBy: { joinedAt: 'asc' },
+    select: {
+      id: true,
+      joinedAt: true,
+      roleInDebate: true,
+      user: {
+        select: { id: true, nickname: true, profileImage: true },
+      },
+    },
+  },
   definitions: {
     where: { status: 'ACTIVE' },
     orderBy: { createdAt: 'desc' },
