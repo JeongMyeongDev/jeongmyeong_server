@@ -17,7 +17,7 @@ model User {
   updatedAt            DateTime            @updatedAt @map("updated_at")
   profileImage         String?             @map("profile_image")
   notificationsEnabled Boolean             @default(true) @map("notifications_enabled")
-  debates              Debate[]
+  createdDebates       Debate[]            @relation("DebateCreator")
   posts                Post[]
   comments             Comment[]
   selections           SelectionTarget[]
@@ -66,8 +66,8 @@ model PasswordResetToken {
 
 model Debate {
   id                      String              @id @default(uuid())
-  creatorId               String              @map("creator_id")
-  creator                 User                @relation(fields: [creatorId], references: [id])
+  creatorId               String?             @map("creator_id")
+  creator                 User?               @relation("DebateCreator", fields: [creatorId], references: [id], onDelete: SetNull)
   parentDebateId          String?             @map("parent_debate_id")
   parentDebate            Debate?             @relation("ChildDebates", fields: [parentDebateId], references: [id])
   childDebates            Debate[]            @relation("ChildDebates")
