@@ -33,6 +33,7 @@ model User {
   reports              Report[]
   bookmarks            DebateBookmark[]
   subscriptions        DebateSubscription[]
+  debateStances        DebateUserStance[]
 
   @@map("users")
 }
@@ -81,6 +82,8 @@ model Debate {
   closeAt                 DateTime?           @map("close_at")
   closedAt                DateTime?           @map("closed_at")
   archivedAt              DateTime?           @map("archived_at")
+  resultSummary           String?             @map("result_summary")
+  stanceDistribution      Json?               @map("stance_distribution")
   createdAt               DateTime            @default(now()) @map("created_at")
   updatedAt               DateTime            @updatedAt @map("updated_at")
   tagMaps                 DebateTagMap[]
@@ -95,6 +98,7 @@ model Debate {
   notifications           Notification[]
   bookmarks               DebateBookmark[]
   subscriptions           DebateSubscription[]
+  userStances             DebateUserStance[]
 
   @@index([creatorId])
   @@index([parentDebateId])
@@ -146,6 +150,7 @@ model Post {
   authorId  String     @map("author_id")
   author    User       @relation(fields: [authorId], references: [id])
   content   String
+  stance    DebateStance?
   status    PostStatus @default(VISIBLE)
   createdAt DateTime   @default(now()) @map("created_at")
   updatedAt DateTime   @updatedAt @map("updated_at")
@@ -156,6 +161,21 @@ model Post {
   @@index([debateId])
   @@index([authorId])
   @@map("posts")
+}
+
+model DebateUserStance {
+  id        String       @id @default(uuid())
+  debateId  String       @map("debate_id")
+  debate    Debate       @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  userId    String       @map("user_id")
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stance    DebateStance
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  @@unique([debateId, userId])
+  @@index([userId])
+  @@map("debate_user_stances")
 }
 
 model Comment {
@@ -394,6 +414,12 @@ enum DebateStatus {
   OPEN
   CLOSED
   ARCHIVED
+}
+
+enum DebateStance {
+  PRO
+  CON
+  NEUTRAL
 }
 
 enum CloseConditionType {

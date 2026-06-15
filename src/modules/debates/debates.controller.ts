@@ -22,6 +22,7 @@ import { CreateDebateDto } from './dto/create-debate.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { CreateSelectionTargetDto } from './dto/create-selection-target.dto';
 import { ListDebatesDto } from './dto/list-debates.dto';
+import { UpdateStanceDto } from './dto/update-stance.dto';
 import { DebatesService } from './debates.service';
 
 @Controller('debates')
@@ -65,6 +66,35 @@ export class DebatesController {
   @Get(':debateId')
   findOne(@Param('debateId') debateId: string) {
     return this.debatesService.findOne(debateId);
+  }
+
+  @Get(':debateId/progress')
+  getProgress(@Param('debateId') debateId: string) {
+    return this.debatesService.getProgress(debateId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get(':debateId/my-stance')
+  getMyStance(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.debatesService.getMyStance(debateId, user.id);
+  }
+
+  @Get(':debateId/stance-summary')
+  getStanceSummary(@Param('debateId') debateId: string) {
+    return this.debatesService.getStanceSummary(debateId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':debateId/stance')
+  updateStance(
+    @Param('debateId') debateId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateStanceDto,
+  ) {
+    return this.debatesService.updateStance(debateId, user.id, dto);
   }
 
   @Get(':debateId/child-debates')

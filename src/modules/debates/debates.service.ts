@@ -5,7 +5,7 @@
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, SelectionSource } from '@prisma/client';
+import { DebateStance, Prisma, SelectionSource } from '@prisma/client';
 import {
   consensusSelect,
   debateListSelect,
@@ -29,6 +29,14 @@ import { CreateDebateDto } from './dto/create-debate.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { CreateSelectionTargetDto } from './dto/create-selection-target.dto';
 import { ListDebatesDto } from './dto/list-debates.dto';
+import { UpdateStanceDto } from './dto/update-stance.dto';
+
+const CONSENSUS_BLOCK_MESSAGE =
+  '진행 중인 합의 또는 하위 토론이 있어 새 의견을 작성할 수 없습니다.';
+const CLOSED_WRITE_MESSAGE = '종료된 토론에서는 새 내용을 작성할 수 없습니다.';
+const ARCHIVED_WRITE_MESSAGE = '아카이브된 토론은 읽기 전용입니다.';
+const PROS_CONS_STANCE_REQUIRED_MESSAGE =
+  '찬반 토론에서는 입장을 선택해야 의견을 작성할 수 있습니다.';
 
 @Injectable()
 export class DebatesService {
@@ -150,6 +158,50 @@ export class DebatesService {
     }
 
     return { debate: withParticipantCount(debate) };
+  }
+
+  async getProgress(debateId: string) {
+    await this.ensureDebateExists(debateId);
+    return { progress: await this.buildProgress(debateId) };
+  }
+
+  async updateStance(debateId: string, userId: string, dto: UpdateStanceDto) {
+    const debate = await this.prisma.debate.findUnique({
+      where: { id: debateId },
+      select: { id: true, debateType: true, status: true },
+    });
+
+    if (!debate) {
+      throw new NotFoundException('토론을 찾을 수 없습니다.');
+    }
+    this.ensureWritableStatus(debate.status);
+    if (debate.debateType !== 'PROS_CONS') {
+      throw new BadRequestException('찬반 토론에서만 입장을 선택할 수 있습니다.');
+    }
+
+    const stance = await this.prisma.debateUserStance.upsert({
+      where: { debateId_userId: { debateId, userId } },
+      create: { debateId, userId, stance: dto.stance },
+      update: { stance: dto.stance },
+      select: { id: true, debateId: true, userId: true, stance: true, updatedAt: true },
+    });
+
+    return { stance, summary: await this.getStanceSummaryValue(debateId) };
+  }
+
+  async getMyStance(debateId: string, userId: string) {
+    await this.ensureDebateExists(debateId);
+    const stance = await this.prisma.debateUserStance.findUnique({
+      where: { debateId_userId: { debateId, userId } },
+      select: { id: true, debateId: true, userId: true, stance: true, updatedAt: true },
+    });
+
+    return { stance };
+  }
+
+  async getStanceSummary(debateId: string) {
+    await this.ensureDebateExists(debateId);
+    return { summary: await this.getStanceSummaryValue(debateId) };
   }
 
   async listChildDebates(debateId: string) {
@@ -283,7 +335,7 @@ export class DebatesService {
   ) {
     const debate = await this.prisma.debate.findUnique({
       where: { id: debateId },
-      select: { id: true, creatorId: true, status: true },
+      select: { id: true, creatorId: true, status: true, debateType: true },
     });
 
     if (!debate) {
@@ -291,22 +343,43 @@ export class DebatesService {
     }
     this.ensureCanManageDebate(debate.creatorId, userId, userRole, '종료');
     if (debate.status === 'ARCHIVED') {
-      throw new ConflictException('아카이브된 토론은 읽기 전용입니다.');
+      throw new ConflictException(ARCHIVED_WRITE_MESSAGE);
     }
     if (debate.status === 'CLOSED') {
       throw new ConflictException('이미 종료된 토론입니다.');
     }
+    if (debate.debateType === 'CONSENSUS') {
+      const progress = await this.buildProgress(debateId);
+      if (progress.isBlocked) {
+        throw new ConflictException(
+          '진행 중인 합의 또는 하위 토론이 있어 토론을 종료할 수 없습니다.',
+        );
+      }
+    }
 
-    // TODO: Store dto.resultSummary when the Debate model adds a resultSummary field.
-    void dto.resultSummary;
+    const stanceDistribution =
+      debate.debateType === 'PROS_CONS'
+        ? await this.getStanceSummaryValue(debateId)
+        : undefined;
 
     const updated = await this.prisma.debate.update({
       where: { id: debateId },
-      data: { status: 'CLOSED', closedAt: new Date() },
-      select: { id: true, status: true, closedAt: true },
+      data: {
+        status: 'CLOSED',
+        closedAt: new Date(),
+        resultSummary: dto.resultSummary,
+        stanceDistribution,
+      },
+      select: {
+        id: true,
+        status: true,
+        closedAt: true,
+        resultSummary: true,
+        stanceDistribution: true,
+      },
     });
 
-    return { debate: updated };
+    return { debate: updated, stanceSummary: stanceDistribution ?? null };
   }
 
   async archive(debateId: string, userId: string, userRole: string) {
@@ -336,8 +409,12 @@ export class DebatesService {
   }
 
   async createPost(debateId: string, userId: string, dto: CreatePostDto) {
-    await this.ensureDebateOpen(debateId);
+    const debate = await this.ensureDebateWritable(debateId);
     await this.ensureParticipant(debateId, userId);
+    const stance =
+      debate.debateType === 'PROS_CONS'
+        ? await this.resolveProsConsPostStance(debateId, userId, dto.stance)
+        : null;
 
     const post = await this.prisma.$transaction(async (tx) => {
       const created = await tx.post.create({
@@ -345,12 +422,14 @@ export class DebatesService {
           debateId,
           authorId: userId,
           content: dto.content,
+          stance,
         },
         select: {
           id: true,
           debateId: true,
           authorId: true,
           content: true,
+          stance: true,
           status: true,
           createdAt: true,
         },
@@ -392,6 +471,7 @@ export class DebatesService {
           id: true,
           debateId: true,
           content: true,
+          stance: true,
           status: true,
           createdAt: true,
           updatedAt: true,
@@ -443,7 +523,7 @@ export class DebatesService {
     userId: string,
     dto: CreateSelectionTargetDto,
   ) {
-    await this.ensureDebateOpen(debateId);
+    await this.ensureDebateWritable(debateId);
     const source = await this.getSelectionSource(dto.sourceType, dto.sourceId);
 
     if (source.debateId !== debateId) {
@@ -508,12 +588,7 @@ export class DebatesService {
     if (!selectionTarget) {
       throw new NotFoundException('?좏깮 ?곸뿭??李얠쓣 ???놁뒿?덈떎.');
     }
-    if (selectionTarget.debate.status === 'CLOSED') {
-      throw new ConflictException('종료된 토론에서는 새 내용을 작성할 수 없습니다.');
-    }
-    if (selectionTarget.debate.status === 'ARCHIVED') {
-      throw new ConflictException('아카이브된 토론은 읽기 전용입니다.');
-    }
+    await this.ensureDebateWritable(selectionTarget.debateId);
 
     await this.ensureSelectionSourceBelongsToDebate(
       selectionTarget.debateId,
@@ -566,7 +641,7 @@ export class DebatesService {
     userId: string,
     dto: CreateConsensusDto,
   ) {
-    await this.ensureDebateOpen(debateId);
+    await this.ensureDebateWritable(debateId);
     await this.ensureSelectionTarget(debateId, dto.selectionTargetId);
     await this.ensureNoDuplicateConsensus(
       dto.selectionTargetId,
@@ -645,12 +720,129 @@ export class DebatesService {
     if (!debate) {
       throw new NotFoundException('토론을 찾을 수 없습니다.');
     }
-    if (debate.status === 'CLOSED') {
-      throw new ConflictException('종료된 토론에서는 새 내용을 작성할 수 없습니다.');
+    this.ensureWritableStatus(debate.status);
+  }
+
+  private ensureWritableStatus(status: string) {
+    if (status === 'CLOSED') {
+      throw new ConflictException(CLOSED_WRITE_MESSAGE);
     }
-    if (debate.status === 'ARCHIVED') {
-      throw new ConflictException('아카이브된 토론은 읽기 전용입니다.');
+    if (status === 'ARCHIVED') {
+      throw new ConflictException(ARCHIVED_WRITE_MESSAGE);
     }
+  }
+
+  private async ensureDebateWritable(debateId: string) {
+    const debate = await this.prisma.debate.findUnique({
+      where: { id: debateId },
+      select: { id: true, status: true, debateType: true },
+    });
+
+    if (!debate) {
+      throw new NotFoundException('토론을 찾을 수 없습니다.');
+    }
+    this.ensureWritableStatus(debate.status);
+
+    if (debate.debateType === 'CONSENSUS') {
+      const progress = await this.buildProgress(debateId);
+      if (progress.isBlocked) {
+        throw new ConflictException(CONSENSUS_BLOCK_MESSAGE);
+      }
+    }
+
+    return debate;
+  }
+
+  private async buildProgress(debateId: string) {
+    const [blockingConsensus, blockingChildDebate] = await this.prisma.$transaction([
+      this.prisma.consensus.findFirst({
+        where: { debateId, status: 'OPEN' },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          term: true,
+          title: true,
+          status: true,
+          createdAt: true,
+          selectionTarget: {
+            select: { id: true, selectedText: true },
+          },
+        },
+      }),
+      this.prisma.debate.findFirst({
+        where: {
+          parentDebateId: debateId,
+          status: 'OPEN',
+        },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          createdAt: true,
+          sourceSelectionTarget: {
+            select: { id: true, selectedText: true },
+          },
+        },
+      }),
+    ]);
+
+    const hasConsensus = Boolean(blockingConsensus);
+    const hasChildDebate = Boolean(blockingChildDebate);
+    const blockingType =
+      hasConsensus && hasChildDebate
+        ? 'BOTH'
+        : hasConsensus
+          ? 'CONSENSUS'
+          : hasChildDebate
+            ? 'CHILD_DEBATE'
+            : null;
+
+    return {
+      isBlocked: Boolean(blockingType),
+      blockingType,
+      blockingConsensus,
+      blockingChildDebate,
+    };
+  }
+
+  private async getStanceSummaryValue(debateId: string) {
+    const [pro, con, neutral, total] = await this.prisma.$transaction([
+      this.prisma.debateUserStance.count({ where: { debateId, stance: 'PRO' } }),
+      this.prisma.debateUserStance.count({ where: { debateId, stance: 'CON' } }),
+      this.prisma.debateUserStance.count({
+        where: { debateId, stance: 'NEUTRAL' },
+      }),
+      this.prisma.debateUserStance.count({ where: { debateId } }),
+    ]);
+
+    return { PRO: pro, CON: con, NEUTRAL: neutral, total };
+  }
+
+  private async resolveProsConsPostStance(
+    debateId: string,
+    userId: string,
+    requestedStance?: DebateStance,
+  ) {
+    const currentStance = await this.prisma.debateUserStance.findUnique({
+      where: { debateId_userId: { debateId, userId } },
+      select: { stance: true },
+    });
+
+    const stance = requestedStance ?? currentStance?.stance;
+    if (!stance) {
+      throw new BadRequestException(PROS_CONS_STANCE_REQUIRED_MESSAGE);
+    }
+
+    if (!currentStance || currentStance.stance !== stance) {
+      await this.prisma.debateUserStance.upsert({
+        where: { debateId_userId: { debateId, userId } },
+        create: { debateId, userId, stance },
+        update: { stance },
+      });
+    }
+
+    return stance;
   }
 
   private ensureCanManageDebate(

@@ -19,6 +19,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateSelectionConsensusDto } from './dto/create-selection-consensus.dto';
 import { VoteConsensusDto } from './dto/vote-consensus.dto';
 
+const CONSENSUS_BLOCK_MESSAGE =
+  '진행 중인 합의 또는 하위 토론이 있어 새 의견을 작성할 수 없습니다.';
+const CLOSED_WRITE_MESSAGE = '종료된 토론에서는 새 내용을 작성할 수 없습니다.';
+const ARCHIVED_WRITE_MESSAGE = '아카이브된 토론은 읽기 전용입니다.';
+
 @Injectable()
 export class ConsensusesService {
   constructor(
@@ -66,19 +71,14 @@ export class ConsensusesService {
       where: { id: selectionTargetId },
       select: {
         debateId: true,
-        debate: { select: { status: true } },
+        debate: { select: { status: true, debateType: true } },
       },
     });
 
     if (!selectionTarget) {
       throw new NotFoundException('?좏깮 ?곸뿭??李얠쓣 ???놁뒿?덈떎.');
     }
-    if (selectionTarget.debate.status === 'CLOSED') {
-      throw new ConflictException('종료된 토론에서는 새 내용을 작성할 수 없습니다.');
-    }
-    if (selectionTarget.debate.status === 'ARCHIVED') {
-      throw new ConflictException('아카이브된 토론은 읽기 전용입니다.');
-    }
+    await this.ensureDebateWritable(selectionTarget.debateId, selectionTarget.debate);
     await this.ensureNoDuplicateConsensus(
       selectionTargetId,
       dto.title,
@@ -118,10 +118,10 @@ export class ConsensusesService {
       throw new NotFoundException('?⑹쓽?덉쓣 李얠쓣 ???놁뒿?덈떎.');
     }
     if (consensus.debate.status === 'CLOSED') {
-      throw new ConflictException('종료된 토론에서는 새 내용을 작성할 수 없습니다.');
+      throw new ConflictException(CLOSED_WRITE_MESSAGE);
     }
     if (consensus.debate.status === 'ARCHIVED') {
-      throw new ConflictException('아카이브된 토론은 읽기 전용입니다.');
+      throw new ConflictException(ARCHIVED_WRITE_MESSAGE);
     }
     if (consensus.status !== 'OPEN') {
       throw new ConflictException('종료된 합의안에는 투표할 수 없습니다.');
@@ -228,6 +228,31 @@ export class ConsensusesService {
     });
     if (existing) {
       throw new ConflictException('?숈씪???⑹쓽?덉씠 ?대? ?쒖븞?섏뼱 ?덉뒿?덈떎.');
+    }
+  }
+
+  private async ensureDebateWritable(
+    debateId: string,
+    debate: { status: string; debateType: string },
+  ) {
+    if (debate.status === 'CLOSED') {
+      throw new ConflictException(CLOSED_WRITE_MESSAGE);
+    }
+    if (debate.status === 'ARCHIVED') {
+      throw new ConflictException(ARCHIVED_WRITE_MESSAGE);
+    }
+    if (debate.debateType !== 'CONSENSUS') return;
+
+    const [openConsensusCount, openChildDebateCount] =
+      await this.prisma.$transaction([
+        this.prisma.consensus.count({ where: { debateId, status: 'OPEN' } }),
+        this.prisma.debate.count({
+          where: { parentDebateId: debateId, status: 'OPEN' },
+        }),
+      ]);
+
+    if (openConsensusCount > 0 || openChildDebateCount > 0) {
+      throw new ConflictException(CONSENSUS_BLOCK_MESSAGE);
     }
   }
 

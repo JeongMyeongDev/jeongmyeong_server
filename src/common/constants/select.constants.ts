@@ -54,8 +54,11 @@ export const debateListSelect = {
   status: true,
   parentDebateId: true,
   sourceSelectionTargetId: true,
+  closedAt: true,
   createdAt: true,
   archivedAt: true,
+  resultSummary: true,
+  stanceDistribution: true,
   creator: {
     select: { id: true, nickname: true },
   },
