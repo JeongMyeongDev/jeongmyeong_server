@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -31,7 +31,8 @@ export class PostsService {
     dto: UpdatePostDto,
   ) {
     const post = await this.findVisiblePost(postId);
-    this.assertOwnership(post.authorId, userId, userRole, '수정');
+    this.assertOwnership(post.authorId, userId, userRole, '?섏젙');
+    this.ensureDebateWritableFromStatus(post.debate.status);
     await this.ensureNoSelectionTarget('POST', postId);
     await this.ensureDefinitionReferencesRemainValid('POST', postId, dto.content);
 
@@ -46,7 +47,8 @@ export class PostsService {
 
   async deletePost(postId: string, userId: string, userRole: string) {
     const post = await this.findVisiblePost(postId);
-    this.assertOwnership(post.authorId, userId, userRole, '삭제');
+    this.assertOwnership(post.authorId, userId, userRole, '??젣');
+    this.ensureDebateWritableFromStatus(post.debate.status);
     await this.ensureNoSelectionTarget('POST', postId);
 
     const updated = await this.prisma.post.update({
@@ -102,10 +104,13 @@ export class PostsService {
     });
 
     if (!post || post.status !== 'VISIBLE') {
-      throw new NotFoundException('의견을 찾을 수 없습니다.');
+      throw new NotFoundException('?섍껄??李얠쓣 ???놁뒿?덈떎.');
     }
-    if (post.debate.status !== 'OPEN') {
-      throw new ConflictException('종료된 토론에는 댓글을 작성할 수 없습니다.');
+    if (post.debate.status === 'CLOSED') {
+      throw new ConflictException('종료된 토론에서는 새 내용을 작성할 수 없습니다.');
+    }
+    if (post.debate.status === 'ARCHIVED') {
+      throw new ConflictException('아카이브된 토론은 읽기 전용입니다.');
     }
 
     let parentAuthorId: string | null = null;
@@ -195,7 +200,8 @@ export class PostsService {
     dto: UpdateCommentDto,
   ) {
     const comment = await this.findVisibleComment(commentId);
-    this.assertOwnership(comment.authorId, userId, userRole, '수정');
+    this.assertOwnership(comment.authorId, userId, userRole, '?섏젙');
+    this.ensureDebateWritableFromStatus(comment.debate.status);
     await this.ensureNoSelectionTarget('COMMENT', commentId);
     await this.ensureDefinitionReferencesRemainValid(
       'COMMENT',
@@ -214,7 +220,8 @@ export class PostsService {
 
   async deleteComment(commentId: string, userId: string, userRole: string) {
     const comment = await this.findVisibleComment(commentId);
-    this.assertOwnership(comment.authorId, userId, userRole, '삭제');
+    this.assertOwnership(comment.authorId, userId, userRole, '??젣');
+    this.ensureDebateWritableFromStatus(comment.debate.status);
     await this.ensureNoSelectionTarget('COMMENT', commentId);
 
     const updated = await this.prisma.comment.update({
@@ -226,10 +233,10 @@ export class PostsService {
     return { comment: updated };
   }
 
-  // ─── Private Helpers ──────────────────────────────────────────
+  // ??? Private Helpers ??????????????????????????????????????????
 
   /**
-   * 권한 검증 헬퍼: 작성자 본인이거나 ADMIN인지 확인합니다.
+   * 沅뚰븳 寃利??ы띁: ?묒꽦??蹂몄씤?닿굅??ADMIN?몄? ?뺤씤?⑸땲??
    */
   private assertOwnership(
     authorId: string,
@@ -238,19 +245,19 @@ export class PostsService {
     action: string,
   ) {
     if (authorId !== userId && userRole !== 'ADMIN') {
-      throw new ForbiddenException(`${action} 권한이 없습니다.`);
+      throw new ForbiddenException(`${action} 沅뚰븳???놁뒿?덈떎.`);
     }
   }
 
   private async findVisiblePost(postId: string) {
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
-      select: { authorId: true, status: true },
+      select: { authorId: true, status: true, debate: { select: { status: true } } },
     });
 
-    if (!post) throw new NotFoundException('의견을 찾을 수 없습니다.');
+    if (!post) throw new NotFoundException('?섍껄??李얠쓣 ???놁뒿?덈떎.');
     if (post.status !== 'VISIBLE') {
-      throw new ConflictException('삭제되었거나 숨겨진 의견은 수정할 수 없습니다.');
+      throw new ConflictException('??젣?섏뿀嫄곕굹 ?④꺼吏??섍껄? ?섏젙?????놁뒿?덈떎.');
     }
     return post;
   }
@@ -258,12 +265,12 @@ export class PostsService {
   private async findVisibleComment(commentId: string) {
     const comment = await this.prisma.comment.findUnique({
       where: { id: commentId },
-      select: { authorId: true, status: true },
+      select: { authorId: true, status: true, debate: { select: { status: true } } },
     });
 
-    if (!comment) throw new NotFoundException('댓글을 찾을 수 없습니다.');
+    if (!comment) throw new NotFoundException('?볤???李얠쓣 ???놁뒿?덈떎.');
     if (comment.status !== 'VISIBLE') {
-      throw new ConflictException('삭제되었거나 숨겨진 댓글은 수정할 수 없습니다.');
+      throw new ConflictException('??젣?섏뿀嫄곕굹 ?④꺼吏??볤?? ?섏젙?????놁뒿?덈떎.');
     }
     return comment;
   }
@@ -273,7 +280,7 @@ export class PostsService {
       where: { id: postId },
       select: { id: true },
     });
-    if (!post) throw new NotFoundException('의견을 찾을 수 없습니다.');
+    if (!post) throw new NotFoundException('?섍껄??李얠쓣 ???놁뒿?덈떎.');
   }
 
   private async ensureParentComment(
@@ -285,7 +292,7 @@ export class PostsService {
       select: { postId: true, status: true, authorId: true },
     });
     if (!parent || parent.postId !== postId || parent.status !== 'VISIBLE') {
-      throw new NotFoundException('부모 댓글을 찾을 수 없습니다.');
+      throw new NotFoundException('遺紐??볤???李얠쓣 ???놁뒿?덈떎.');
     }
     return parent.authorId;
   }
@@ -300,8 +307,17 @@ export class PostsService {
     });
     if (selectionTarget) {
       throw new ConflictException(
-        '선택/합의에 연결된 글은 수정하거나 삭제할 수 없습니다.',
+        '이 글은 합의안 또는 하위 토론의 근거로 사용되어 수정할 수 없습니다.',
       );
+    }
+  }
+
+  private ensureDebateWritableFromStatus(status: string) {
+    if (status === 'CLOSED') {
+      throw new ConflictException('종료된 토론에서는 새 내용을 작성할 수 없습니다.');
+    }
+    if (status === 'ARCHIVED') {
+      throw new ConflictException('아카이브된 토론은 읽기 전용입니다.');
     }
   }
 
@@ -326,7 +342,7 @@ export class PostsService {
         );
       } catch {
         throw new ConflictException(
-          '정의 참조 위치가 변경되어 수정할 수 없습니다. 연결된 단어는 그대로 두고 다시 시도해 주세요.',
+          '?뺤쓽 李몄“ ?꾩튂媛 蹂寃쎈릺???섏젙?????놁뒿?덈떎. ?곌껐???⑥뼱??洹몃?濡??먭퀬 ?ㅼ떆 ?쒕룄??二쇱꽭??',
         );
       }
     }
@@ -344,7 +360,7 @@ export class PostsService {
 
     if (definitionReference) {
       throw new ConflictException(
-        '이 글은 정의 참조가 포함되어 있어 수정할 수 없습니다.',
+        '??湲? ?뺤쓽 李몄“媛 ?ы븿?섏뼱 ?덉뼱 ?섏젙?????놁뒿?덈떎.',
       );
     }
   }

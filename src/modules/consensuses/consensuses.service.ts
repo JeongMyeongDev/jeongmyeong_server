@@ -1,4 +1,4 @@
-import {
+﻿import {
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -49,7 +49,7 @@ export class ConsensusesService {
     });
 
     if (!consensus) {
-      throw new NotFoundException('합의안을 찾을 수 없습니다.');
+      throw new NotFoundException('?⑹쓽?덉쓣 李얠쓣 ???놁뒿?덈떎.');
     }
 
     return {
@@ -71,10 +71,13 @@ export class ConsensusesService {
     });
 
     if (!selectionTarget) {
-      throw new NotFoundException('선택 영역을 찾을 수 없습니다.');
+      throw new NotFoundException('?좏깮 ?곸뿭??李얠쓣 ???놁뒿?덈떎.');
     }
-    if (selectionTarget.debate.status !== 'OPEN') {
-      throw new ConflictException('종료된 토론에는 합의안을 생성할 수 없습니다.');
+    if (selectionTarget.debate.status === 'CLOSED') {
+      throw new ConflictException('종료된 토론에서는 새 내용을 작성할 수 없습니다.');
+    }
+    if (selectionTarget.debate.status === 'ARCHIVED') {
+      throw new ConflictException('아카이브된 토론은 읽기 전용입니다.');
     }
     await this.ensureNoDuplicateConsensus(
       selectionTargetId,
@@ -112,12 +115,17 @@ export class ConsensusesService {
     });
 
     if (!consensus) {
-      throw new NotFoundException('합의안을 찾을 수 없습니다.');
+      throw new NotFoundException('?⑹쓽?덉쓣 李얠쓣 ???놁뒿?덈떎.');
     }
-    if (consensus.debate.status !== 'OPEN' || consensus.status !== 'OPEN') {
+    if (consensus.debate.status === 'CLOSED') {
+      throw new ConflictException('종료된 토론에서는 새 내용을 작성할 수 없습니다.');
+    }
+    if (consensus.debate.status === 'ARCHIVED') {
+      throw new ConflictException('아카이브된 토론은 읽기 전용입니다.');
+    }
+    if (consensus.status !== 'OPEN') {
       throw new ConflictException('종료된 합의안에는 투표할 수 없습니다.');
     }
-
     const vote = await this.prisma.consensusVote.upsert({
       where: { consensusId_userId: { consensusId, userId } },
       create: { consensusId, userId, voteType: dto.voteType, comment: dto.comment },
@@ -149,10 +157,10 @@ export class ConsensusesService {
     const consensus = await this.findFinalizableConsensus(consensusId);
     this.ensureCanFinalize(consensus, user);
     if (consensus.debate.status !== 'OPEN') {
-      throw new ConflictException('종료된 토론에서는 합의안을 확정할 수 없습니다.');
+      throw new ConflictException('醫낅즺???좊줎?먯꽌???⑹쓽?덉쓣 ?뺤젙?????놁뒿?덈떎.');
     }
     if (consensus.status !== 'OPEN' && consensus.status !== 'APPROVED') {
-      throw new ConflictException('이미 종료된 합의안입니다.');
+      throw new ConflictException('?대? 醫낅즺???⑹쓽?덉엯?덈떎.');
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -179,7 +187,7 @@ export class ConsensusesService {
     });
 
     return {
-      message: '합의안이 승인되어 기준 정의로 저장되었습니다.',
+      message: '?⑹쓽?덉씠 ?뱀씤?섏뼱 湲곗? ?뺤쓽濡???λ릺?덉뒿?덈떎.',
       consensus: await withConsensusVoteSummary(
         this.prisma,
         result.approvedConsensus,
@@ -194,7 +202,7 @@ export class ConsensusesService {
       consensusId,
       user,
       'REJECTED',
-      '합의안이 반려되었습니다.',
+      '?⑹쓽?덉씠 諛섎젮?섏뿀?듬땲??',
     );
   }
 
@@ -203,11 +211,11 @@ export class ConsensusesService {
       consensusId,
       user,
       'CLOSED',
-      '합의안이 종료되었습니다.',
+      '?⑹쓽?덉씠 醫낅즺?섏뿀?듬땲??',
     );
   }
 
-  // ─── Private Helpers ──────────────────────────────────────────
+  // ??? Private Helpers ??????????????????????????????????????????
 
   private async ensureNoDuplicateConsensus(
     selectionTargetId: string,
@@ -219,7 +227,7 @@ export class ConsensusesService {
       select: { id: true },
     });
     if (existing) {
-      throw new ConflictException('동일한 합의안이 이미 제안되어 있습니다.');
+      throw new ConflictException('?숈씪???⑹쓽?덉씠 ?대? ?쒖븞?섏뼱 ?덉뒿?덈떎.');
     }
   }
 
@@ -232,10 +240,10 @@ export class ConsensusesService {
     const consensus = await this.findFinalizableConsensus(consensusId);
     this.ensureCanFinalize(consensus, user);
     if (consensus.debate.status !== 'OPEN') {
-      throw new ConflictException('종료된 토론에서는 합의안을 확정할 수 없습니다.');
+      throw new ConflictException('醫낅즺???좊줎?먯꽌???⑹쓽?덉쓣 ?뺤젙?????놁뒿?덈떎.');
     }
     if (consensus.status !== 'OPEN') {
-      throw new ConflictException('이미 종료된 합의안입니다.');
+      throw new ConflictException('?대? 醫낅즺???⑹쓽?덉엯?덈떎.');
     }
 
     const updatedConsensus = await this.prisma.consensus.update({
@@ -268,7 +276,7 @@ export class ConsensusesService {
     });
 
     if (!consensus) {
-      throw new NotFoundException('합의안을 찾을 수 없습니다.');
+      throw new NotFoundException('?⑹쓽?덉쓣 李얠쓣 ???놁뒿?덈떎.');
     }
 
     return consensus;
@@ -279,7 +287,7 @@ export class ConsensusesService {
     user: AuthenticatedUser,
   ) {
     if (user.role !== 'ADMIN' && consensus.debate.creatorId !== user.id) {
-      throw new ForbiddenException('합의안을 확정할 권한이 없습니다.');
+      throw new ForbiddenException('?⑹쓽?덉쓣 ?뺤젙??沅뚰븳???놁뒿?덈떎.');
     }
   }
 
