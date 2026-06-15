@@ -8,6 +8,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { IsCommunityText } from '../../../common/validators/community-text.validator';
+import { DefinitionReferencesDto } from './definition-reference.dto';
 
 class CommentSelectionDto {
   @IsString()
@@ -23,7 +24,7 @@ class CommentSelectionDto {
   endOffset!: number;
 }
 
-export class CreateCommentDto {
+export class CreateCommentDto extends DefinitionReferencesDto {
   @IsString()
   @IsNotEmpty()
   @IsCommunityText()

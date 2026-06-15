@@ -1,11 +1,11 @@
-import {
+﻿import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, SelectionSource } from '@prisma/client';
+import { DebateStance, Prisma, SelectionSource } from '@prisma/client';
 import {
   consensusSelect,
   debateListSelect,
@@ -18,23 +18,38 @@ import { normalizePagination, paginationMeta } from '../../common/utils/paginati
 import { validateSelection } from '../../common/utils/selection.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  DefinitionReferencesService,
+  definitionReferenceSelect,
+} from '../definition-references/definition-references.service';
+import { CloseDebateDto } from './dto/close-debate.dto';
+import { CreateChildDebateDto } from './dto/create-child-debate.dto';
 import { CreateConsensusDto } from './dto/create-consensus.dto';
 import { CreateDebateDto } from './dto/create-debate.dto';
 import { CreatePostDto } from './dto/create-post.dto';
 import { CreateSelectionTargetDto } from './dto/create-selection-target.dto';
 import { ListDebatesDto } from './dto/list-debates.dto';
+import { UpdateStanceDto } from './dto/update-stance.dto';
+
+const CONSENSUS_BLOCK_MESSAGE =
+  '진행 중인 합의 또는 하위 토론이 있어 새 의견을 작성할 수 없습니다.';
+const CLOSED_WRITE_MESSAGE = '종료된 토론에서는 새 내용을 작성할 수 없습니다.';
+const ARCHIVED_WRITE_MESSAGE = '아카이브된 토론은 읽기 전용입니다.';
+const PROS_CONS_STANCE_REQUIRED_MESSAGE =
+  '찬반 토론에서는 입장을 선택해야 의견을 작성할 수 있습니다.';
 
 @Injectable()
 export class DebatesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly definitionReferencesService: DefinitionReferencesService,
   ) {}
 
   async create(userId: string, dto: CreateDebateDto) {
     if (dto.closeConditionType === 'TIME_LIMIT' && !dto.closeAt) {
       throw new BadRequestException(
-        'TIME_LIMIT 종료 조건에는 closeAt이 필요합니다.',
+        'TIME_LIMIT 醫낅즺 議곌굔?먮뒗 closeAt???꾩슂?⑸땲??',
       );
     }
 
@@ -139,10 +154,114 @@ export class DebatesService {
     });
 
     if (!debate) {
-      throw new NotFoundException('토론을 찾을 수 없습니다.');
+      throw new NotFoundException('?좊줎??李얠쓣 ???놁뒿?덈떎.');
     }
 
     return { debate: withParticipantCount(debate) };
+  }
+
+  async getProgress(debateId: string) {
+    await this.ensureDebateExists(debateId);
+    return { progress: await this.buildProgress(debateId) };
+  }
+
+  async updateStance(debateId: string, userId: string, dto: UpdateStanceDto) {
+    const debate = await this.prisma.debate.findUnique({
+      where: { id: debateId },
+      select: { id: true, debateType: true, status: true },
+    });
+
+    if (!debate) {
+      throw new NotFoundException('토론을 찾을 수 없습니다.');
+    }
+    this.ensureWritableStatus(debate.status);
+    if (debate.debateType !== 'PROS_CONS') {
+      throw new BadRequestException('찬반 토론에서만 입장을 선택할 수 있습니다.');
+    }
+
+    const stance = await this.prisma.debateUserStance.upsert({
+      where: { debateId_userId: { debateId, userId } },
+      create: { debateId, userId, stance: dto.stance },
+      update: { stance: dto.stance },
+      select: { id: true, debateId: true, userId: true, stance: true, updatedAt: true },
+    });
+
+    return { stance, summary: await this.getStanceSummaryValue(debateId) };
+  }
+
+  async getMyStance(debateId: string, userId: string) {
+    await this.ensureDebateExists(debateId);
+    const stance = await this.prisma.debateUserStance.findUnique({
+      where: { debateId_userId: { debateId, userId } },
+      select: { id: true, debateId: true, userId: true, stance: true, updatedAt: true },
+    });
+
+    return { stance };
+  }
+
+  async getStanceSummary(debateId: string) {
+    await this.ensureDebateExists(debateId);
+    return { summary: await this.getStanceSummaryValue(debateId) };
+  }
+
+  async listChildDebates(debateId: string) {
+    await this.ensureDebateExists(debateId);
+
+    const childDebates = await this.prisma.debate.findMany({
+      where: { parentDebateId: debateId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        ...debateSummarySelect,
+        sourceSelectionTarget: {
+          select: {
+            id: true,
+            sourceType: true,
+            sourceId: true,
+            selectedText: true,
+            startOffset: true,
+            endOffset: true,
+          },
+        },
+      },
+    });
+
+    return {
+      childDebates: childDebates.map(withParticipantCount),
+    };
+  }
+
+  async findParentDebate(debateId: string) {
+    const debate = await this.prisma.debate.findUnique({
+      where: { id: debateId },
+      select: {
+        parentDebateId: true,
+        sourceSelectionTarget: {
+          select: {
+            id: true,
+            sourceType: true,
+            sourceId: true,
+            selectedText: true,
+            startOffset: true,
+            endOffset: true,
+          },
+        },
+        parentDebate: {
+          select: debateSummarySelect,
+        },
+      },
+    });
+
+    if (!debate) {
+      throw new NotFoundException('?좊줎??李얠쓣 ???놁뒿?덈떎.');
+    }
+
+    return {
+      parentDebate: debate.parentDebate
+        ? withParticipantCount(debate.parentDebate)
+        : null,
+      selectedText: debate.sourceSelectionTarget?.selectedText ?? null,
+      sourceSelectionTarget: debate.sourceSelectionTarget,
+    };
   }
 
   async join(debateId: string, userId: string) {
@@ -208,6 +327,61 @@ export class DebatesService {
     });
   }
 
+  async close(
+    debateId: string,
+    userId: string,
+    userRole: string,
+    dto: CloseDebateDto,
+  ) {
+    const debate = await this.prisma.debate.findUnique({
+      where: { id: debateId },
+      select: { id: true, creatorId: true, status: true, debateType: true },
+    });
+
+    if (!debate) {
+      throw new NotFoundException('토론을 찾을 수 없습니다.');
+    }
+    this.ensureCanManageDebate(debate.creatorId, userId, userRole, '종료');
+    if (debate.status === 'ARCHIVED') {
+      throw new ConflictException(ARCHIVED_WRITE_MESSAGE);
+    }
+    if (debate.status === 'CLOSED') {
+      throw new ConflictException('이미 종료된 토론입니다.');
+    }
+    if (debate.debateType === 'CONSENSUS') {
+      const progress = await this.buildProgress(debateId);
+      if (progress.isBlocked) {
+        throw new ConflictException(
+          '진행 중인 합의 또는 하위 토론이 있어 토론을 종료할 수 없습니다.',
+        );
+      }
+    }
+
+    const stanceDistribution =
+      debate.debateType === 'PROS_CONS'
+        ? await this.getStanceSummaryValue(debateId)
+        : undefined;
+
+    const updated = await this.prisma.debate.update({
+      where: { id: debateId },
+      data: {
+        status: 'CLOSED',
+        closedAt: new Date(),
+        resultSummary: dto.resultSummary,
+        stanceDistribution,
+      },
+      select: {
+        id: true,
+        status: true,
+        closedAt: true,
+        resultSummary: true,
+        stanceDistribution: true,
+      },
+    });
+
+    return { debate: updated, stanceSummary: stanceDistribution ?? null };
+  }
+
   async archive(debateId: string, userId: string, userRole: string) {
     const debate = await this.prisma.debate.findUnique({
       where: { id: debateId },
@@ -217,14 +391,12 @@ export class DebatesService {
     if (!debate) {
       throw new NotFoundException('토론을 찾을 수 없습니다.');
     }
-    if (debate.creatorId !== userId && userRole !== 'ADMIN') {
-      throw new ForbiddenException('아카이브 권한이 없습니다.');
-    }
+    this.ensureCanManageDebate(debate.creatorId, userId, userRole, '아카이브');
     if (debate.status === 'ARCHIVED') {
       throw new ConflictException('이미 아카이브된 토론입니다.');
     }
     if (debate.status !== 'CLOSED') {
-      throw new BadRequestException('종결된 토론만 아카이브할 수 있습니다.');
+      throw new BadRequestException('종료된 토론만 아카이브할 수 있습니다.');
     }
 
     const updated = await this.prisma.debate.update({
@@ -237,23 +409,43 @@ export class DebatesService {
   }
 
   async createPost(debateId: string, userId: string, dto: CreatePostDto) {
-    await this.ensureDebateOpen(debateId);
+    const debate = await this.ensureDebateWritable(debateId);
     await this.ensureParticipant(debateId, userId);
+    const stance =
+      debate.debateType === 'PROS_CONS'
+        ? await this.resolveProsConsPostStance(debateId, userId, dto.stance)
+        : null;
 
-    const post = await this.prisma.post.create({
-      data: {
-        debateId,
-        authorId: userId,
-        content: dto.content,
-      },
-      select: {
-        id: true,
-        debateId: true,
-        authorId: true,
-        content: true,
-        status: true,
-        createdAt: true,
-      },
+    const post = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.post.create({
+        data: {
+          debateId,
+          authorId: userId,
+          content: dto.content,
+          stance,
+        },
+        select: {
+          id: true,
+          debateId: true,
+          authorId: true,
+          content: true,
+          stance: true,
+          status: true,
+          createdAt: true,
+        },
+      });
+
+      const definitionReferences =
+        await this.definitionReferencesService.createManyForPost(
+          tx,
+          debateId,
+          created.id,
+          created.content,
+          userId,
+          dto.definitionReferences,
+        );
+
+      return { ...created, definitionReferences };
     });
 
     this.notifyParticipants(debateId, userId, 'NEW_POST_IN_DEBATE', post.id);
@@ -279,11 +471,16 @@ export class DebatesService {
           id: true,
           debateId: true,
           content: true,
+          stance: true,
           status: true,
           createdAt: true,
           updatedAt: true,
           author: {
             select: { id: true, nickname: true, profileImage: true },
+          },
+          definitionReferences: {
+            orderBy: { startOffset: 'asc' },
+            select: definitionReferenceSelect,
           },
         },
       }),
@@ -326,11 +523,11 @@ export class DebatesService {
     userId: string,
     dto: CreateSelectionTargetDto,
   ) {
-    await this.ensureDebateOpen(debateId);
+    await this.ensureDebateWritable(debateId);
     const source = await this.getSelectionSource(dto.sourceType, dto.sourceId);
 
     if (source.debateId !== debateId) {
-      throw new BadRequestException('선택 대상이 요청한 토론에 속하지 않습니다.');
+      throw new BadRequestException('?좏깮 ??곸씠 ?붿껌???좊줎???랁븯吏 ?딆뒿?덈떎.');
     }
 
     validateSelection(source.content, dto.selectedText, dto.startOffset, dto.endOffset);
@@ -367,12 +564,84 @@ export class DebatesService {
     return { selectionTarget };
   }
 
+  async createChildDebate(
+    selectionTargetId: string,
+    userId: string,
+    dto: CreateChildDebateDto,
+  ) {
+    const selectionTarget = await this.prisma.selectionTarget.findUnique({
+      where: { id: selectionTargetId },
+      select: {
+        id: true,
+        debateId: true,
+        sourceType: true,
+        sourceId: true,
+        selectedText: true,
+        startOffset: true,
+        endOffset: true,
+        debate: {
+          select: debateSummarySelect,
+        },
+      },
+    });
+
+    if (!selectionTarget) {
+      throw new NotFoundException('?좏깮 ?곸뿭??李얠쓣 ???놁뒿?덈떎.');
+    }
+    await this.ensureDebateWritable(selectionTarget.debateId);
+
+    await this.ensureSelectionSourceBelongsToDebate(
+      selectionTarget.debateId,
+      selectionTarget.sourceType,
+      selectionTarget.sourceId,
+    );
+
+    const tags = this.normalizeTags(dto.tags);
+    const childDebate = await this.prisma.debate.create({
+      data: {
+        title: dto.title,
+        description: dto.description,
+        debateType: dto.debateType ?? 'FREE',
+        status: 'OPEN',
+        creatorId: userId,
+        parentDebateId: selectionTarget.debateId,
+        sourceSelectionTargetId: selectionTarget.id,
+        participants: {
+          create: { userId, roleInDebate: 'CREATOR' },
+        },
+        tagMaps: {
+          create: tags.map((name) => ({
+            tag: {
+              connectOrCreate: { where: { name }, create: { name } },
+            },
+          })),
+        },
+      },
+      select: debateSummarySelect,
+    });
+
+    return {
+      childDebate: withParticipantCount(childDebate),
+      selectedText: selectionTarget.selectedText,
+      sourceSelectionTarget: {
+        id: selectionTarget.id,
+        debateId: selectionTarget.debateId,
+        sourceType: selectionTarget.sourceType,
+        sourceId: selectionTarget.sourceId,
+        selectedText: selectionTarget.selectedText,
+        startOffset: selectionTarget.startOffset,
+        endOffset: selectionTarget.endOffset,
+      },
+      parentDebate: withParticipantCount(selectionTarget.debate),
+    };
+  }
+
   async createConsensus(
     debateId: string,
     userId: string,
     dto: CreateConsensusDto,
   ) {
-    await this.ensureDebateOpen(debateId);
+    await this.ensureDebateWritable(debateId);
     await this.ensureSelectionTarget(debateId, dto.selectionTargetId);
     await this.ensureNoDuplicateConsensus(
       dto.selectionTargetId,
@@ -399,7 +668,7 @@ export class DebatesService {
     };
   }
 
-  // ─── Private Helpers ──────────────────────────────────────────
+  // ??? Private Helpers ??????????????????????????????????????????
 
   private buildWhere(
     query: ListDebatesDto,
@@ -439,7 +708,7 @@ export class DebatesService {
       select: { id: true },
     });
     if (!debate) {
-      throw new NotFoundException('토론을 찾을 수 없습니다.');
+      throw new NotFoundException('?좊줎??李얠쓣 ???놁뒿?덈떎.');
     }
   }
 
@@ -451,8 +720,139 @@ export class DebatesService {
     if (!debate) {
       throw new NotFoundException('토론을 찾을 수 없습니다.');
     }
-    if (debate.status !== 'OPEN') {
-      throw new ConflictException('종료된 토론에는 작성할 수 없습니다.');
+    this.ensureWritableStatus(debate.status);
+  }
+
+  private ensureWritableStatus(status: string) {
+    if (status === 'CLOSED') {
+      throw new ConflictException(CLOSED_WRITE_MESSAGE);
+    }
+    if (status === 'ARCHIVED') {
+      throw new ConflictException(ARCHIVED_WRITE_MESSAGE);
+    }
+  }
+
+  private async ensureDebateWritable(debateId: string) {
+    const debate = await this.prisma.debate.findUnique({
+      where: { id: debateId },
+      select: { id: true, status: true, debateType: true },
+    });
+
+    if (!debate) {
+      throw new NotFoundException('토론을 찾을 수 없습니다.');
+    }
+    this.ensureWritableStatus(debate.status);
+
+    if (debate.debateType === 'CONSENSUS') {
+      const progress = await this.buildProgress(debateId);
+      if (progress.isBlocked) {
+        throw new ConflictException(CONSENSUS_BLOCK_MESSAGE);
+      }
+    }
+
+    return debate;
+  }
+
+  private async buildProgress(debateId: string) {
+    const [blockingConsensus, blockingChildDebate] = await this.prisma.$transaction([
+      this.prisma.consensus.findFirst({
+        where: { debateId, status: 'OPEN' },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          term: true,
+          title: true,
+          status: true,
+          createdAt: true,
+          selectionTarget: {
+            select: { id: true, selectedText: true },
+          },
+        },
+      }),
+      this.prisma.debate.findFirst({
+        where: {
+          parentDebateId: debateId,
+          status: 'OPEN',
+        },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          createdAt: true,
+          sourceSelectionTarget: {
+            select: { id: true, selectedText: true },
+          },
+        },
+      }),
+    ]);
+
+    const hasConsensus = Boolean(blockingConsensus);
+    const hasChildDebate = Boolean(blockingChildDebate);
+    const blockingType =
+      hasConsensus && hasChildDebate
+        ? 'BOTH'
+        : hasConsensus
+          ? 'CONSENSUS'
+          : hasChildDebate
+            ? 'CHILD_DEBATE'
+            : null;
+
+    return {
+      isBlocked: Boolean(blockingType),
+      blockingType,
+      blockingConsensus,
+      blockingChildDebate,
+    };
+  }
+
+  private async getStanceSummaryValue(debateId: string) {
+    const [pro, con, neutral, total] = await this.prisma.$transaction([
+      this.prisma.debateUserStance.count({ where: { debateId, stance: 'PRO' } }),
+      this.prisma.debateUserStance.count({ where: { debateId, stance: 'CON' } }),
+      this.prisma.debateUserStance.count({
+        where: { debateId, stance: 'NEUTRAL' },
+      }),
+      this.prisma.debateUserStance.count({ where: { debateId } }),
+    ]);
+
+    return { PRO: pro, CON: con, NEUTRAL: neutral, total };
+  }
+
+  private async resolveProsConsPostStance(
+    debateId: string,
+    userId: string,
+    requestedStance?: DebateStance,
+  ) {
+    const currentStance = await this.prisma.debateUserStance.findUnique({
+      where: { debateId_userId: { debateId, userId } },
+      select: { stance: true },
+    });
+
+    const stance = requestedStance ?? currentStance?.stance;
+    if (!stance) {
+      throw new BadRequestException(PROS_CONS_STANCE_REQUIRED_MESSAGE);
+    }
+
+    if (!currentStance || currentStance.stance !== stance) {
+      await this.prisma.debateUserStance.upsert({
+        where: { debateId_userId: { debateId, userId } },
+        create: { debateId, userId, stance },
+        update: { stance },
+      });
+    }
+
+    return stance;
+  }
+
+  private ensureCanManageDebate(
+    creatorId: string | null,
+    userId: string,
+    userRole: string,
+    action: string,
+  ) {
+    if (creatorId !== userId && userRole !== 'ADMIN') {
+      throw new ForbiddenException(`${action} 권한이 없습니다.`);
     }
   }
 
@@ -473,8 +873,8 @@ export class DebatesService {
         where: { id: sourceId },
         select: { debateId: true, content: true, status: true },
       });
-      if (!post) throw new NotFoundException('의견을 찾을 수 없습니다.');
-      if (post.status !== 'VISIBLE') throw new BadRequestException('선택할 수 없는 의견입니다.');
+      if (!post) throw new NotFoundException('?섍껄??李얠쓣 ???놁뒿?덈떎.');
+      if (post.status !== 'VISIBLE') throw new BadRequestException('?좏깮?????녿뒗 ?섍껄?낅땲??');
       return post;
     }
 
@@ -482,8 +882,8 @@ export class DebatesService {
       where: { id: sourceId },
       select: { debateId: true, content: true, status: true },
     });
-    if (!comment) throw new NotFoundException('댓글을 찾을 수 없습니다.');
-    if (comment.status !== 'VISIBLE') throw new BadRequestException('선택할 수 없는 댓글입니다.');
+    if (!comment) throw new NotFoundException('?볤???李얠쓣 ???놁뒿?덈떎.');
+    if (comment.status !== 'VISIBLE') throw new BadRequestException('?좏깮?????녿뒗 ?볤??낅땲??');
     return comment;
   }
 
@@ -496,9 +896,32 @@ export class DebatesService {
       where: { id: selectionTargetId },
       select: { debateId: true },
     });
-    if (!selection) throw new NotFoundException('선택 대상을 찾을 수 없습니다.');
+    if (!selection) throw new NotFoundException('?좏깮 ??곸쓣 李얠쓣 ???놁뒿?덈떎.');
     if (selection.debateId !== debateId) {
-      throw new BadRequestException('선택 대상이 요청한 토론에 속하지 않습니다.');
+      throw new BadRequestException('?좏깮 ??곸씠 ?붿껌???좊줎???랁븯吏 ?딆뒿?덈떎.');
+    }
+  }
+
+  private async ensureSelectionSourceBelongsToDebate(
+    debateId: string,
+    sourceType: SelectionSource,
+    sourceId: string,
+  ) {
+    const source =
+      sourceType === 'POST'
+        ? await this.prisma.post.findFirst({
+            where: { id: sourceId, debateId },
+            select: { id: true },
+          })
+        : await this.prisma.comment.findFirst({
+            where: { id: sourceId, debateId },
+            select: { id: true },
+          });
+
+    if (!source) {
+      throw new BadRequestException(
+        '?좏깮 ?먮낯???곸쐞 ?좊줎???랁븯吏 ?딆뒿?덈떎.',
+      );
     }
   }
 
@@ -512,7 +935,7 @@ export class DebatesService {
       select: { id: true },
     });
     if (existing) {
-      throw new ConflictException('동일한 합의안이 이미 제안되어 있습니다.');
+      throw new ConflictException('?숈씪???⑹쓽?덉씠 ?대? ?쒖븞?섏뼱 ?덉뒿?덈떎.');
     }
   }
 
