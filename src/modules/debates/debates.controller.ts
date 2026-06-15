@@ -63,9 +63,13 @@ export class DebatesController {
     return this.debatesService.create(user.id, dto);
   }
 
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':debateId')
-  findOne(@Param('debateId') debateId: string) {
-    return this.debatesService.findOne(debateId);
+  findOne(
+    @Param('debateId') debateId: string,
+    @Req() request: Request & { user?: AuthenticatedUser },
+  ) {
+    return this.debatesService.findOne(debateId, request.user?.id);
   }
 
   @Get(':debateId/progress')

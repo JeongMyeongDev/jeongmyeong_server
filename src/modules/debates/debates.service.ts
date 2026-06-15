@@ -49,7 +49,7 @@ export class DebatesService {
   async create(userId: string, dto: CreateDebateDto) {
     if (dto.closeConditionType === 'TIME_LIMIT' && !dto.closeAt) {
       throw new BadRequestException(
-        'TIME_LIMIT 醫낅즺 議곌굔?먮뒗 closeAt???꾩슂?⑸땲??',
+        'TIME_LIMIT 종료 조건에는 closeAt이 필요합니다.',
       );
     }
 
@@ -147,17 +147,36 @@ export class DebatesService {
     };
   }
 
-  async findOne(debateId: string) {
+  async findOne(debateId: string, userId?: string) {
     const debate = await this.prisma.debate.findUnique({
       where: { id: debateId },
       select: debateSummarySelect,
     });
 
     if (!debate) {
-      throw new NotFoundException('?좊줎??李얠쓣 ???놁뒿?덈떎.');
+      throw new NotFoundException('토론을 찾을 수 없습니다.');
     }
 
-    return { debate: withParticipantCount(debate) };
+    const [bookmark, subscription] = userId
+      ? await this.prisma.$transaction([
+          this.prisma.debateBookmark.findUnique({
+            where: { userId_debateId: { userId, debateId } },
+            select: { id: true },
+          }),
+          this.prisma.debateSubscription.findUnique({
+            where: { userId_debateId: { userId, debateId } },
+            select: { id: true },
+          }),
+        ])
+      : [null, null];
+
+    return {
+      debate: {
+        ...withParticipantCount(debate),
+        isBookmarked: Boolean(bookmark),
+        isSubscribed: Boolean(subscription),
+      },
+    };
   }
 
   async getProgress(debateId: string) {
@@ -252,7 +271,7 @@ export class DebatesService {
     });
 
     if (!debate) {
-      throw new NotFoundException('?좊줎??李얠쓣 ???놁뒿?덈떎.');
+      throw new NotFoundException('토론을 찾을 수 없습니다.');
     }
 
     return {
@@ -527,7 +546,7 @@ export class DebatesService {
     const source = await this.getSelectionSource(dto.sourceType, dto.sourceId);
 
     if (source.debateId !== debateId) {
-      throw new BadRequestException('?좏깮 ??곸씠 ?붿껌???좊줎???랁븯吏 ?딆뒿?덈떎.');
+      throw new BadRequestException('선택 대상이 요청한 토론에 속하지 않습니다.');
     }
 
     validateSelection(source.content, dto.selectedText, dto.startOffset, dto.endOffset);
@@ -586,7 +605,7 @@ export class DebatesService {
     });
 
     if (!selectionTarget) {
-      throw new NotFoundException('?좏깮 ?곸뿭??李얠쓣 ???놁뒿?덈떎.');
+      throw new NotFoundException('선택 영역을 찾을 수 없습니다.');
     }
     await this.ensureDebateWritable(selectionTarget.debateId);
 
@@ -668,7 +687,7 @@ export class DebatesService {
     };
   }
 
-  // ??? Private Helpers ??????????????????????????????????????????
+  // Private Helpers
 
   private buildWhere(
     query: ListDebatesDto,
@@ -708,7 +727,7 @@ export class DebatesService {
       select: { id: true },
     });
     if (!debate) {
-      throw new NotFoundException('?좊줎??李얠쓣 ???놁뒿?덈떎.');
+      throw new NotFoundException('토론을 찾을 수 없습니다.');
     }
   }
 
@@ -873,8 +892,8 @@ export class DebatesService {
         where: { id: sourceId },
         select: { debateId: true, content: true, status: true },
       });
-      if (!post) throw new NotFoundException('?섍껄??李얠쓣 ???놁뒿?덈떎.');
-      if (post.status !== 'VISIBLE') throw new BadRequestException('?좏깮?????녿뒗 ?섍껄?낅땲??');
+      if (!post) throw new NotFoundException('의견을 찾을 수 없습니다.');
+      if (post.status !== 'VISIBLE') throw new BadRequestException('선택할 수 없는 의견입니다.');
       return post;
     }
 
@@ -882,8 +901,8 @@ export class DebatesService {
       where: { id: sourceId },
       select: { debateId: true, content: true, status: true },
     });
-    if (!comment) throw new NotFoundException('?볤???李얠쓣 ???놁뒿?덈떎.');
-    if (comment.status !== 'VISIBLE') throw new BadRequestException('?좏깮?????녿뒗 ?볤??낅땲??');
+    if (!comment) throw new NotFoundException('댓글을 찾을 수 없습니다.');
+    if (comment.status !== 'VISIBLE') throw new BadRequestException('선택할 수 없는 댓글입니다.');
     return comment;
   }
 
@@ -896,9 +915,9 @@ export class DebatesService {
       where: { id: selectionTargetId },
       select: { debateId: true },
     });
-    if (!selection) throw new NotFoundException('?좏깮 ??곸쓣 李얠쓣 ???놁뒿?덈떎.');
+    if (!selection) throw new NotFoundException('선택 대상을 찾을 수 없습니다.');
     if (selection.debateId !== debateId) {
-      throw new BadRequestException('?좏깮 ??곸씠 ?붿껌???좊줎???랁븯吏 ?딆뒿?덈떎.');
+      throw new BadRequestException('선택 대상이 요청한 토론에 속하지 않습니다.');
     }
   }
 
@@ -920,7 +939,7 @@ export class DebatesService {
 
     if (!source) {
       throw new BadRequestException(
-        '?좏깮 ?먮낯???곸쐞 ?좊줎???랁븯吏 ?딆뒿?덈떎.',
+        '선택 원본이 상위 토론에 속하지 않습니다.',
       );
     }
   }
@@ -935,7 +954,7 @@ export class DebatesService {
       select: { id: true },
     });
     if (existing) {
-      throw new ConflictException('?숈씪???⑹쓽?덉씠 ?대? ?쒖븞?섏뼱 ?덉뒿?덈떎.');
+      throw new ConflictException('동일한 합의안이 이미 제안되어 있습니다.');
     }
   }
 
