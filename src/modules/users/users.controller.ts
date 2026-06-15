@@ -28,6 +28,12 @@ export class UsersController {
     return this.usersService.updateMySettings(user.id, dto);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/onboarding-complete')
+  completeOnboarding(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.completeOnboarding(user.id);
+  }
+
   @Get(':userId')
   findPublicProfile(@Param('userId') userId: string) {
     return this.usersService.findPublicProfile(userId);

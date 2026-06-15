@@ -285,6 +285,9 @@ export class AuthService {
         profileImage: true,
         role: true,
         status: true,
+        hasCompletedOnboarding: true,
+        onboardingCompletedAt: true,
+        onboardingVersion: true,
       },
     });
 
@@ -355,7 +358,12 @@ export class AuthService {
     id: string;
     email: string;
     nickname: string;
+    profileImage?: string | null;
     role: 'USER' | 'ADMIN';
+    status: UserStatus;
+    hasCompletedOnboarding: boolean;
+    onboardingCompletedAt?: Date | null;
+    onboardingVersion: number;
   }) {
     const accessToken = await this.jwtService.signAsync({
       sub: user.id,
@@ -369,6 +377,12 @@ export class AuthService {
         id: user.id,
         email: user.email,
         nickname: user.nickname,
+        profileImage: user.profileImage,
+        role: user.role,
+        status: user.status,
+        hasCompletedOnboarding: user.hasCompletedOnboarding,
+        onboardingCompletedAt: user.onboardingCompletedAt,
+        onboardingVersion: user.onboardingVersion,
       },
     };
   }

@@ -17,6 +17,9 @@ model User {
   updatedAt            DateTime            @updatedAt @map("updated_at")
   profileImage         String?             @map("profile_image")
   notificationsEnabled Boolean             @default(true) @map("notifications_enabled")
+  hasCompletedOnboarding Boolean           @default(false) @map("has_completed_onboarding")
+  onboardingCompletedAt DateTime?          @map("onboarding_completed_at")
+  onboardingVersion    Int                 @default(1) @map("onboarding_version")
   createdDebates       Debate[]            @relation("DebateCreator")
   posts                Post[]
   comments             Comment[]

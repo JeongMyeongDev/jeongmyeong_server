@@ -13,8 +13,14 @@ const publicProfileSelect = {
 
 const meProfileSelect = {
   id: true,
+  email: true,
   nickname: true,
   profileImage: true,
+  role: true,
+  status: true,
+  hasCompletedOnboarding: true,
+  onboardingCompletedAt: true,
+  onboardingVersion: true,
 } satisfies Prisma.UserSelect;
 
 type PublicProfile = Prisma.UserGetPayload<{ select: typeof publicProfileSelect }>;
@@ -50,7 +56,10 @@ export class UsersService {
     return { notificationsEnabled: user.notificationsEnabled };
   }
 
-  async updateMySettings(userId: string, dto: UpdateSettingsDto): Promise<{ notificationsEnabled: boolean }> {
+  async updateMySettings(
+    userId: string,
+    dto: UpdateSettingsDto,
+  ): Promise<{ notificationsEnabled: boolean }> {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { notificationsEnabled: dto.notificationsEnabled },
@@ -74,6 +83,19 @@ export class UsersService {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: dto,
+      select: meProfileSelect,
+    });
+
+    return { user };
+  }
+
+  async completeOnboarding(userId: string): Promise<{ user: MeProfile }> {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        hasCompletedOnboarding: true,
+        onboardingCompletedAt: new Date(),
+      },
       select: meProfileSelect,
     });
 
