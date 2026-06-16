@@ -160,7 +160,7 @@ export class DebatesService {
       throw new NotFoundException('토론을 찾을 수 없습니다.');
     }
 
-    const [bookmark, subscription] = userId
+    const [bookmark, subscription, participant] = userId
       ? await this.prisma.$transaction([
           this.prisma.debateBookmark.findUnique({
             where: { userId_debateId: { userId, debateId } },
@@ -170,14 +170,30 @@ export class DebatesService {
             where: { userId_debateId: { userId, debateId } },
             select: { id: true },
           }),
+          this.prisma.debateParticipant.findUnique({
+            where: { debateId_userId: { debateId, userId } },
+            select: {
+              id: true,
+              debateId: true,
+              userId: true,
+              joinedAt: true,
+              lastReadAt: true,
+              roleInDebate: true,
+              user: {
+                select: { id: true, nickname: true, profileImage: true },
+              },
+            },
+          }),
         ])
-      : [null, null];
+      : [null, null, null];
 
     return {
       debate: {
         ...withParticipantCount(debate),
         isBookmarked: Boolean(bookmark),
         isSubscribed: Boolean(subscription),
+        isParticipant: Boolean(participant),
+        myParticipant: participant,
       },
     };
   }
@@ -883,11 +899,13 @@ export class DebatesService {
   }
 
   private async ensureParticipant(debateId: string, userId: string) {
-    await this.prisma.debateParticipant.upsert({
+    const participant = await this.prisma.debateParticipant.findUnique({
       where: { debateId_userId: { debateId, userId } },
-      create: { debateId, userId },
-      update: {},
+      select: { id: true },
     });
+    if (!participant) {
+      throw new ForbiddenException('토론에 참여한 후 의견을 작성할 수 있습니다.');
+    }
   }
 
   private async getSelectionSource(

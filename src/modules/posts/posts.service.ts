@@ -115,6 +115,7 @@ export class PostsService {
       throw new NotFoundException('의견을 찾을 수 없습니다.');
     }
     await this.ensureDebateWritable(post.debateId, post.debate);
+    await this.ensureParticipant(post.debateId, userId);
 
     let parentAuthorId: string | null = null;
     if (dto.parentCommentId) {
@@ -341,6 +342,16 @@ export class PostsService {
 
     if (openConsensusCount > 0 || openChildDebateCount > 0) {
       throw new ConflictException(CONSENSUS_BLOCK_MESSAGE);
+    }
+  }
+
+  private async ensureParticipant(debateId: string, userId: string) {
+    const participant = await this.prisma.debateParticipant.findUnique({
+      where: { debateId_userId: { debateId, userId } },
+      select: { id: true },
+    });
+    if (!participant) {
+      throw new ForbiddenException('토론에 참여한 후 댓글을 작성할 수 있습니다.');
     }
   }
 
