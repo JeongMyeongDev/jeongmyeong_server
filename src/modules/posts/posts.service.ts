@@ -12,6 +12,7 @@ import {
 } from '../definition-references/definition-references.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SanctionsService } from '../sanctions/sanctions.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
@@ -27,6 +28,7 @@ export class PostsService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly definitionReferencesService: DefinitionReferencesService,
+    private readonly sanctionsService: SanctionsService,
   ) {}
 
   async updatePost(
@@ -96,6 +98,7 @@ export class PostsService {
   }
 
   async createComment(postId: string, userId: string, dto: CreateCommentDto) {
+    await this.sanctionsService.assertUserCanWrite(userId);
     const post = await this.prisma.post.findUnique({
       where: { id: postId },
       select: {

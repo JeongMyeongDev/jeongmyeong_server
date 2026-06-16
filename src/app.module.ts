@@ -12,6 +12,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { PostsModule } from './modules/posts/posts.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { SanctionsModule } from './modules/sanctions/sanctions.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
@@ -33,6 +34,7 @@ import { UsersModule } from './modules/users/users.module';
     NotificationsModule,
     ReportsModule,
     ModerationModule,
+    SanctionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

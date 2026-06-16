@@ -18,6 +18,7 @@ import { normalizePagination, paginationMeta } from '../../common/utils/paginati
 import { validateSelection } from '../../common/utils/selection.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SanctionsService } from '../sanctions/sanctions.service';
 import {
   DefinitionReferencesService,
   definitionReferenceSelect,
@@ -44,9 +45,11 @@ export class DebatesService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
     private readonly definitionReferencesService: DefinitionReferencesService,
+    private readonly sanctionsService: SanctionsService,
   ) {}
 
   async create(userId: string, dto: CreateDebateDto) {
+    await this.sanctionsService.assertUserCanCreateDebate(userId);
     if (dto.closeConditionType === 'TIME_LIMIT' && !dto.closeAt) {
       throw new BadRequestException(
         'TIME_LIMIT 종료 조건에는 closeAt이 필요합니다.',
@@ -428,6 +431,7 @@ export class DebatesService {
   }
 
   async createPost(debateId: string, userId: string, dto: CreatePostDto) {
+    await this.sanctionsService.assertUserCanWrite(userId);
     const debate = await this.ensureDebateWritable(debateId);
     await this.ensureParticipant(debateId, userId);
     const stance =
@@ -542,6 +546,7 @@ export class DebatesService {
     userId: string,
     dto: CreateSelectionTargetDto,
   ) {
+    await this.sanctionsService.assertUserCanWrite(userId);
     await this.ensureDebateWritable(debateId);
     const source = await this.getSelectionSource(dto.sourceType, dto.sourceId);
 
@@ -588,6 +593,7 @@ export class DebatesService {
     userId: string,
     dto: CreateChildDebateDto,
   ) {
+    await this.sanctionsService.assertUserCanCreateDebate(userId);
     const selectionTarget = await this.prisma.selectionTarget.findUnique({
       where: { id: selectionTargetId },
       select: {
@@ -660,6 +666,7 @@ export class DebatesService {
     userId: string,
     dto: CreateConsensusDto,
   ) {
+    await this.sanctionsService.assertUserCanWrite(userId);
     await this.ensureDebateWritable(debateId);
     await this.ensureSelectionTarget(debateId, dto.selectionTargetId);
     await this.ensureNoDuplicateConsensus(

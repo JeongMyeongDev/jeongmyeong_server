@@ -34,6 +34,10 @@ model User {
   sentNotifications    Notification[]      @relation("SentNotifications")
   passwordResetTokens  PasswordResetToken[]
   reports              Report[]
+  handledReports       Report[]             @relation("ReportHandler")
+  sanctions            Sanction[]           @relation("SanctionedUser")
+  moderatedSanctions   Sanction[]           @relation("SanctionModerator")
+  sanctionAcknowledgements SanctionAcknowledgement[]
   bookmarks            DebateBookmark[]
   subscriptions        DebateSubscription[]
   debateStances        DebateUserStance[]
@@ -337,8 +341,8 @@ model DefinitionReference {
 
 model ModerationLog {
   id         String               @id @default(uuid())
-  debateId   String               @map("debate_id")
-  debate     Debate               @relation(fields: [debateId], references: [id], onDelete: Cascade)
+  debateId   String?              @map("debate_id")
+  debate     Debate?              @relation(fields: [debateId], references: [id], onDelete: Cascade)
   targetType ModerationTargetType @map("target_type")
   targetId   String               @map("target_id")
   actionType ModerationActionType @map("action_type")
@@ -354,20 +358,68 @@ model ModerationLog {
 }
 
 model Report {
-  id         String           @id @default(uuid())
-  reporterId String           @map("reporter_id")
-  reporter   User             @relation(fields: [reporterId], references: [id])
-  targetType ReportTargetType @map("target_type")
-  targetId   String           @map("target_id")
-  reason     String
-  status     ReportStatus     @default(OPEN)
-  createdAt  DateTime         @default(now()) @map("created_at")
-  resolvedAt DateTime?        @map("resolved_at")
+  id                    String           @id @default(uuid())
+  reporterId            String           @map("reporter_id")
+  reporter              User             @relation(fields: [reporterId], references: [id])
+  targetType            ReportTargetType @map("target_type")
+  targetId              String           @map("target_id")
+  debateId              String?          @map("debate_id")
+  reason                ReportReason
+  detail                String?
+  targetContentSnapshot String?          @map("target_content_snapshot")
+  status                ReportStatus     @default(PENDING)
+  handledById           String?          @map("handled_by_id")
+  handledBy             User?            @relation("ReportHandler", fields: [handledById], references: [id])
+  handledAt             DateTime?        @map("handled_at")
+  resolutionNote        String?          @map("resolution_note")
+  createdAt             DateTime         @default(now()) @map("created_at")
+  resolvedAt            DateTime?        @map("resolved_at")
+  sanctions             Sanction[]
 
+  @@unique([reporterId, targetType, targetId])
   @@index([reporterId])
   @@index([targetType, targetId])
   @@index([status])
+  @@index([handledById])
   @@map("reports")
+}
+
+model Sanction {
+  id           String          @id @default(uuid())
+  userId       String          @map("user_id")
+  user         User            @relation("SanctionedUser", fields: [userId], references: [id])
+  reportId     String?         @map("report_id")
+  report       Report?         @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  moderatorId  String          @map("moderator_id")
+  moderator    User            @relation("SanctionModerator", fields: [moderatorId], references: [id])
+  type         SanctionType
+  status       SanctionStatus  @default(ACTIVE)
+  reason       String
+  startsAt     DateTime        @default(now()) @map("starts_at")
+  endsAt       DateTime?       @map("ends_at")
+  revokedAt    DateTime?       @map("revoked_at")
+  revokeReason String?         @map("revoke_reason")
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
+  acknowledgements SanctionAcknowledgement[]
+
+  @@index([userId, status])
+  @@index([reportId])
+  @@index([moderatorId])
+  @@map("sanctions")
+}
+
+model SanctionAcknowledgement {
+  id             String    @id @default(uuid())
+  sanctionId     String    @map("sanction_id")
+  sanction       Sanction  @relation(fields: [sanctionId], references: [id], onDelete: Cascade)
+  userId         String    @map("user_id")
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  acknowledgedAt DateTime  @default(now()) @map("acknowledged_at")
+
+  @@unique([sanctionId, userId])
+  @@index([userId])
+  @@map("sanction_acknowledgements")
 }
 
 model DebateBookmark {
@@ -487,13 +539,21 @@ enum ModerationTargetType {
   COMMENT
   CONSENSUS
   DEBATE
+  USER
+  REPORT
+  SANCTION
 }
 
 enum ModerationActionType {
+  NONE
   HIDE
   DELETE
   CLOSE
   RESTORE
+  REVIEW
+  REJECT
+  SANCTION
+  REVOKE
 }
 
 enum ReportTargetType {
@@ -501,13 +561,40 @@ enum ReportTargetType {
   COMMENT
   CONSENSUS
   DEBATE
+  USER
+}
+
+enum ReportReason {
+  SPAM
+  ABUSE
+  HATE
+  SEXUAL
+  VIOLENCE
+  MISINFORMATION
+  OFF_TOPIC
+  ETC
 }
 
 enum ReportStatus {
-  OPEN
+  PENDING
   REVIEWING
-  RESOLVED
+  ACTION_TAKEN
   REJECTED
+  DUPLICATE
+}
+
+enum SanctionType {
+  WARNING
+  WRITE_RESTRICTION
+  DEBATE_CREATE_RESTRICTION
+  TEMP_SUSPENSION
+  PERMANENT_SUSPENSION
+}
+
+enum SanctionStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
 }
 
 enum NotificationType {

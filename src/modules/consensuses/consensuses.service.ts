@@ -16,6 +16,7 @@ import {
 } from '../definitions/definitions.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { SanctionsService } from '../sanctions/sanctions.service';
 import { CreateSelectionConsensusDto } from './dto/create-selection-consensus.dto';
 import { VoteConsensusDto } from './dto/vote-consensus.dto';
 
@@ -29,6 +30,7 @@ export class ConsensusesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
+    private readonly sanctionsService: SanctionsService,
   ) {}
 
   async findOne(consensusId: string, userId?: string) {
@@ -67,6 +69,7 @@ export class ConsensusesService {
     userId: string,
     dto: CreateSelectionConsensusDto,
   ) {
+    await this.sanctionsService.assertUserCanWrite(userId);
     const selectionTarget = await this.prisma.selectionTarget.findUnique({
       where: { id: selectionTargetId },
       select: {
@@ -105,6 +108,7 @@ export class ConsensusesService {
   }
 
   async vote(consensusId: string, userId: string, dto: VoteConsensusDto) {
+    await this.sanctionsService.assertUserCanWrite(userId);
     const consensus = await this.prisma.consensus.findUnique({
       where: { id: consensusId },
       select: {

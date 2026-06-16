@@ -1,5 +1,5 @@
-import { ReportTargetType } from '@prisma/client';
-import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
+import { ReportReason, ReportTargetType } from '@prisma/client';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateReportDto {
   @IsEnum(ReportTargetType)
@@ -9,7 +9,11 @@ export class CreateReportDto {
   @IsNotEmpty()
   targetId!: string;
 
+  @IsEnum(ReportReason)
+  reason!: ReportReason;
+
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  reason!: string;
+  @MaxLength(1000)
+  detail?: string;
 }
