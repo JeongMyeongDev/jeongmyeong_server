@@ -106,12 +106,18 @@ export const debateSummarySelect = {
 /**
  * _count.participants를 participantCount로 변환하는 헬퍼
  */
-export function withParticipantCount<T extends { _count?: { participants: number } }>(
+export function withParticipantCount<
+  T extends {
+    _count?: { participants: number };
+    tagMaps?: Array<{ tag: { id: string; name: string } }>;
+  },
+>(
   debate: T,
 ) {
   const { _count, ...rest } = debate;
   return {
     ...rest,
+    tags: debate.tagMaps?.map(({ tag }) => tag) ?? [],
     participantCount: _count?.participants ?? 0,
   };
 }

@@ -56,7 +56,7 @@ export class DebatesService {
       );
     }
 
-    const tags = this.normalizeTags(dto.tags);
+    const tagIds = await this.validateTagIds(dto.tagIds);
     const debate = await this.prisma.debate.create({
       data: {
         title: dto.title,
@@ -69,10 +69,8 @@ export class DebatesService {
           create: { userId, roleInDebate: 'CREATOR' },
         },
         tagMaps: {
-          create: tags.map((name) => ({
-            tag: {
-              connectOrCreate: { where: { name }, create: { name } },
-            },
+          create: tagIds.map((tagId) => ({
+            tag: { connect: { id: tagId } },
           })),
         },
       },
@@ -637,7 +635,7 @@ export class DebatesService {
       selectionTarget.sourceId,
     );
 
-    const tags = this.normalizeTags(dto.tags);
+    const tagIds = await this.validateTagIds(dto.tagIds);
     const childDebate = await this.prisma.debate.create({
       data: {
         title: dto.title,
@@ -651,10 +649,8 @@ export class DebatesService {
           create: { userId, roleInDebate: 'CREATOR' },
         },
         tagMaps: {
-          create: tags.map((name) => ({
-            tag: {
-              connectOrCreate: { where: { name }, create: { name } },
-            },
+          create: tagIds.map((tagId) => ({
+            tag: { connect: { id: tagId } },
           })),
         },
       },
@@ -731,14 +727,30 @@ export class DebatesService {
       ];
     }
 
-    if (query.tag) {
-      where.tagMaps = {
-        some: { tag: { name: query.tag.trim().toLowerCase() } },
-      };
+    const andConditions: Prisma.DebateWhereInput[] = [];
+    const tagName = query.tag?.trim().toLowerCase();
+    if (tagName) {
+      andConditions.push({
+        tagMaps: {
+          some: { tag: { name: tagName } },
+        },
+      });
+    }
+    const tagIds = this.parseTagIdsQuery(query.tagIds);
+    if (tagIds.length > 0) {
+      andConditions.push({
+        tagMaps: {
+          some: { tagId: { in: tagIds } },
+        },
+      });
     }
 
     if (query.type) {
       where.debateType = query.type;
+    }
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
     }
 
     return where;
@@ -983,12 +995,45 @@ export class DebatesService {
     }
   }
 
-  private normalizeTags(tags?: string[]) {
+  private parseTagIdsQuery(tagIds?: string) {
     return Array.from(
       new Set(
-        (tags ?? []).map((tag) => tag.trim().toLowerCase()).filter(Boolean),
+        (tagIds ?? '')
+          .split(',')
+          .map((tagId) => tagId.trim())
+          .filter(Boolean),
       ),
-    );
+    ).slice(0, 50);
+  }
+
+  private async validateTagIds(tagIds?: string[]) {
+    const normalizedTagIds = (tagIds ?? [])
+      .map((tagId) => tagId.trim())
+      .filter(Boolean);
+    const uniqueTagIds = Array.from(new Set(normalizedTagIds));
+
+    if (normalizedTagIds.length !== uniqueTagIds.length) {
+      throw new BadRequestException('중복된 태그가 포함되어 있습니다.');
+    }
+    if (uniqueTagIds.length > 5) {
+      throw new BadRequestException('태그는 최대 5개까지 선택할 수 있습니다.');
+    }
+    if (uniqueTagIds.length === 0) {
+      return [];
+    }
+
+    const existingTags = await this.prisma.debateTag.findMany({
+      where: { id: { in: uniqueTagIds } },
+      select: { id: true },
+    });
+    const existingIds = new Set(existingTags.map((tag) => tag.id));
+    const unknownTagIds = uniqueTagIds.filter((tagId) => !existingIds.has(tagId));
+
+    if (unknownTagIds.length > 0) {
+      throw new BadRequestException('존재하지 않는 태그가 포함되어 있습니다.');
+    }
+
+    return uniqueTagIds;
   }
 
   private async notifyParticipants(

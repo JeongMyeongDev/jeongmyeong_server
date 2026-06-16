@@ -1,4 +1,7 @@
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
   IsArray,
   IsDateString,
   IsIn,
@@ -30,10 +33,11 @@ export class CreateDebateDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMinSize(1, { message: '태그를 하나 이상 선택해 주세요.' })
+  @ArrayMaxSize(5, { message: '태그는 최대 5개까지 선택할 수 있습니다.' })
+  @ArrayUnique({ message: '중복된 태그가 포함되어 있습니다.' })
   @IsString({ each: true })
-  @IsCommunityText({ each: true })
-  @Matches(DEBATE_TEXT_PATTERN, { each: true, message: DEBATE_TEXT_MESSAGE })
-  tags?: string[];
+  tagIds?: string[];
 
   @IsOptional()
   @IsIn(['TIME_LIMIT', 'MANUAL', 'TARGET_REACHED'])

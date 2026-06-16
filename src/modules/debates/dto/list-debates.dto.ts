@@ -11,6 +11,10 @@ export class ListDebatesDto {
   tag?: string;
 
   @IsOptional()
+  @IsString()
+  tagIds?: string;
+
+  @IsOptional()
   @IsIn(['FREE', 'CONSENSUS', 'PROS_CONS'])
   type?: 'FREE' | 'CONSENSUS' | 'PROS_CONS';
 

@@ -13,6 +13,7 @@ import { PostsModule } from './modules/posts/posts.module';
 import { PrismaModule } from './modules/prisma/prisma.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { SanctionsModule } from './modules/sanctions/sanctions.module';
+import { TagsModule } from './modules/tags/tags.module';
 import { UsersModule } from './modules/users/users.module';
 
 @Module({
@@ -35,6 +36,7 @@ import { UsersModule } from './modules/users/users.module';
     ReportsModule,
     ModerationModule,
     SanctionsModule,
+    TagsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
