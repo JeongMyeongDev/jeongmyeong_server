@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../../common/auth/authenticated-user';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -32,6 +32,13 @@ export class UsersController {
   @Patch('me/onboarding-complete')
   completeOnboarding(@CurrentUser() user: AuthenticatedUser) {
     return this.usersService.completeOnboarding(user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('me')
+  @HttpCode(200)
+  deleteMe(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.deleteMe(user.id);
   }
 
   @Get(':userId')

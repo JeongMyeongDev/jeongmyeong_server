@@ -101,4 +101,31 @@ export class UsersService {
 
     return { user };
   }
+
+  async deleteMe(userId: string): Promise<{ message: string }> {
+    const result = await this.prisma.user.updateMany({
+      where: { id: userId, status: { not: 'DELETED' } },
+      data: {
+        email: this.createDeletedEmail(userId),
+        nickname: this.createDeletedNickname(userId),
+        profileImage: null,
+        notificationsEnabled: false,
+        status: 'DELETED',
+      },
+    });
+
+    if (result.count === 0) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    return { message: '회원 탈퇴가 완료되었습니다.' };
+  }
+
+  private createDeletedEmail(userId: string) {
+    return `deleted-${userId}-${Date.now()}@deleted.local`;
+  }
+
+  private createDeletedNickname(userId: string) {
+    return `deleted_user_${userId.slice(0, 8)}_${Date.now()}`;
+  }
 }

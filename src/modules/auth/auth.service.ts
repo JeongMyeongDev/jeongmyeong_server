@@ -38,6 +38,7 @@ export class AuthService {
     const { email, nickname, password, passwordConfirm } = registerDto;
 
     this.assertPasswordsMatch(password, passwordConfirm);
+    await this.releaseDeletedUserIdentifiers(email, nickname);
     await this.assertUserNotExists(email, nickname);
 
     const existingPendingRegistration = await this.prisma.pendingRegistration.findFirst({
@@ -91,6 +92,11 @@ export class AuthService {
       await this.cleanupPendingRegistration(pendingRegistration.id);
       throw new GoneException('이메일 인증 링크가 만료되었습니다. 다시 가입을 진행해 주세요.');
     }
+
+    await this.releaseDeletedUserIdentifiers(
+      pendingRegistration.email,
+      pendingRegistration.nickname,
+    );
 
     const existingUser = await this.prisma.user.findFirst({
       where: {
@@ -198,6 +204,7 @@ export class AuthService {
     this.assertPasswordsMatch(password, passwordConfirm);
 
     const payload = await this.verifyGoogleIdToken(idToken);
+    await this.releaseDeletedUserIdentifiers(payload.email, nickname);
     await this.assertUserNotExists(payload.email, nickname);
 
     const user = await this.prisma.user.create({
@@ -294,6 +301,7 @@ export class AuthService {
     if (!user) {
       throw new NotFoundException('사용자 정보를 찾을 수 없습니다.');
     }
+    this.assertUserCanLogin(user.status);
 
     return { user };
   }
@@ -312,7 +320,10 @@ export class AuthService {
 
   private async assertUserNotExists(email: string, nickname: string) {
     const existingUser = await this.prisma.user.findFirst({
-      where: { OR: [{ email }, { nickname }] },
+      where: {
+        status: { not: 'DELETED' },
+        OR: [{ email }, { nickname }],
+      },
       select: { email: true, nickname: true },
     });
 
@@ -323,6 +334,36 @@ export class AuthService {
     if (existingUser?.nickname === nickname) {
       throw new ConflictException('이미 사용 중인 닉네임입니다.');
     }
+  }
+
+  private async releaseDeletedUserIdentifiers(email: string, nickname: string) {
+    const deletedUsers = await this.prisma.user.findMany({
+      where: {
+        status: 'DELETED',
+        OR: [{ email }, { nickname }],
+      },
+      select: { id: true },
+    });
+
+    await Promise.all(
+      deletedUsers.map((user) =>
+        this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            email: this.createDeletedEmail(user.id),
+            nickname: this.createDeletedNickname(user.id),
+          },
+        }),
+      ),
+    );
+  }
+
+  private createDeletedEmail(userId: string) {
+    return `deleted-${userId}-${Date.now()}@deleted.local`;
+  }
+
+  private createDeletedNickname(userId: string) {
+    return `deleted_user_${userId.slice(0, 8)}_${Date.now()}`;
   }
 
   private assertUserCanLogin(status: UserStatus) {

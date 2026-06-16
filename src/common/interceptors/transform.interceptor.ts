@@ -1,5 +1,6 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { map } from 'rxjs';
+import { maskDeletedUserDisplay } from '../utils/user-display.util';
 
 /**
  * 모든 응답을 `{ success: true, ...data }` 형태로 자동 래핑합니다.
@@ -10,15 +11,21 @@ export class TransformInterceptor implements NestInterceptor {
   intercept(_context: ExecutionContext, next: CallHandler) {
     return next.handle().pipe(
       map((data: unknown) => {
-        if (data === null || data === undefined) {
+        const displayData = maskDeletedUserDisplay(data);
+
+        if (displayData === null || displayData === undefined) {
           return { success: true };
         }
 
-        if (typeof data === 'object' && !Array.isArray(data) && 'success' in (data as object)) {
-          return data;
+        if (
+          typeof displayData === 'object' &&
+          !Array.isArray(displayData) &&
+          'success' in displayData
+        ) {
+          return displayData;
         }
 
-        return { success: true, ...data };
+        return { success: true, ...displayData };
       }),
     );
   }
