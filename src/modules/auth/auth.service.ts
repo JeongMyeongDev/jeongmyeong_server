@@ -368,7 +368,7 @@ export class AuthService {
 
   private assertUserCanLogin(status: UserStatus) {
     if (status === 'SUSPENDED') {
-      throw new UnauthorizedException('정지된 계정입니다. 관리자에게 문의해 주세요.');
+      throw new UnauthorizedException('This account is suspended. Please check your sanction history.');
     }
     if (status === 'DELETED') {
       throw new UnauthorizedException('삭제된 계정입니다.');
