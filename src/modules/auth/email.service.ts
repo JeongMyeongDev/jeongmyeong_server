@@ -23,31 +23,6 @@ export class EmailService {
     });
   }
 
-  async sendVerificationEmail(email: string, verificationUrl: string) {
-    const from = process.env.MAIL_FROM ?? process.env.SMTP_USER;
-
-    await this.getTransporter().sendMail({
-      from,
-      to: email,
-      subject: '정명 이메일 인증',
-      text: `아래 링크를 눌러 이메일 인증을 완료해 주세요.\n\n${verificationUrl}\n\n이 링크는 30분 동안 유효합니다.`,
-      html: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-          <h2>정명 이메일 인증</h2>
-          <p>아래 버튼을 눌러 이메일 인증을 완료해 주세요.</p>
-          <p>
-            <a href="${verificationUrl}" style="display:inline-block;padding:12px 18px;background:#4dc891;color:#fff;text-decoration:none;border-radius:999px;">
-              이메일 인증하기
-            </a>
-          </p>
-          <p>버튼이 열리지 않으면 아래 링크를 복사해서 브라우저에 붙여 넣어 주세요.</p>
-          <p>${verificationUrl}</p>
-          <p>이 링크는 30분 동안 유효합니다.</p>
-        </div>
-      `,
-    });
-  }
-
   async sendPasswordResetEmail(email: string, resetUrl: string) {
     const from = process.env.MAIL_FROM ?? process.env.SMTP_USER;
 
