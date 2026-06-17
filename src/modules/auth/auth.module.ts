@@ -11,7 +11,7 @@ import { EmailService } from './email.service';
     JwtModule.register({
       secret: process.env.JWT_SECRET,
       signOptions: {
-        expiresIn: (process.env.JWT_EXPIRES_IN ?? '2h') as StringValue,
+        expiresIn: (process.env.JWT_EXPIRES_IN ?? '24h') as StringValue,
       },
     }),
   ],
