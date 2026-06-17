@@ -20,6 +20,9 @@ const definitionSelect = {
   sourceConsensus: {
     select: { id: true, title: true, status: true },
   },
+  selectionTarget: {
+    select: { id: true, selectedText: true, sourceType: true, sourceId: true },
+  },
   creator: {
     select: { id: true, nickname: true, profileImage: true },
   },
