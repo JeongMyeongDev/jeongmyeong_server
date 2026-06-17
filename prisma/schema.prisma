@@ -41,6 +41,7 @@ model User {
   bookmarks            DebateBookmark[]
   subscriptions        DebateSubscription[]
   debateStances        DebateUserStance[]
+  supportInquiries     SupportInquiry[]
 
   @@map("users")
 }
@@ -409,6 +410,25 @@ model SanctionAcknowledgement {
   @@map("sanction_acknowledgements")
 }
 
+model SupportInquiry {
+  id         String                 @id @default(uuid())
+  userId     String                 @map("user_id")
+  user       User                   @relation(fields: [userId], references: [id])
+  category   SupportInquiryCategory @default(ETC)
+  title      String
+  content    String
+  status     SupportInquiryStatus   @default(PENDING)
+  adminReply String?                @map("admin_reply")
+  createdAt  DateTime               @default(now()) @map("created_at")
+  updatedAt  DateTime               @updatedAt @map("updated_at")
+  resolvedAt DateTime?              @map("resolved_at")
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("support_inquiries")
+}
+
 model DebateBookmark {
   id        String   @id @default(uuid())
   userId    String   @map("user_id")
@@ -582,6 +602,21 @@ enum SanctionStatus {
   ACTIVE
   EXPIRED
   REVOKED
+}
+
+enum SupportInquiryCategory {
+  BUG
+  ACCOUNT
+  DEBATE
+  REPORT
+  ETC
+}
+
+enum SupportInquiryStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
 }
 
 enum NotificationType {
