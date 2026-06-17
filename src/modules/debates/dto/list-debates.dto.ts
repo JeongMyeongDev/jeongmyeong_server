@@ -1,5 +1,16 @@
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
+import {
+  DEBATE_STATUSES,
+  DEBATE_TYPES,
+  SORT_DIRECTIONS,
+  SORT_FIELDS,
+  type DebateStatusValue,
+  type DebateTypeValue,
+  type SortDirectionValue,
+  type SortFieldValue,
+} from '../../../common/constants/domain.constants';
+import { DEFAULT_LIMIT, DEFAULT_PAGE, MAX_LIMIT } from '../../../common/constants/pagination.constants';
 
 export class ListDebatesDto {
   @IsOptional()
@@ -15,31 +26,31 @@ export class ListDebatesDto {
   tagIds?: string;
 
   @IsOptional()
-  @IsIn(['FREE', 'CONSENSUS', 'PROS_CONS'])
-  type?: 'FREE' | 'CONSENSUS' | 'PROS_CONS';
+  @IsIn(DEBATE_TYPES)
+  type?: DebateTypeValue;
 
   @IsOptional()
-  @IsIn(['OPEN', 'CLOSED', 'ARCHIVED'])
-  status?: 'OPEN' | 'CLOSED' | 'ARCHIVED';
-
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number = 1;
+  @IsIn(DEBATE_STATUSES)
+  status?: DebateStatusValue;
 
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100)
-  limit?: number = 20;
+  page?: number = DEFAULT_PAGE;
 
   @IsOptional()
-  @IsIn(['createdAt', 'archivedAt', 'updatedAt'])
-  sort?: 'createdAt' | 'archivedAt' | 'updatedAt' = 'createdAt';
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_LIMIT)
+  limit?: number = DEFAULT_LIMIT;
 
   @IsOptional()
-  @IsIn(['asc', 'desc'])
-  direction?: 'asc' | 'desc' = 'desc';
+  @IsIn(SORT_FIELDS)
+  sort?: SortFieldValue = 'createdAt';
+
+  @IsOptional()
+  @IsIn(SORT_DIRECTIONS)
+  direction?: SortDirectionValue = 'desc';
 }

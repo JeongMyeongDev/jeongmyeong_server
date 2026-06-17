@@ -12,6 +12,9 @@ import { UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes } from 'crypto';
 import { OAuth2Client, type TokenPayload } from 'google-auth-library';
+import { DEFAULT_CLIENT_URL } from '../../common/constants/domain.constants';
+import { AUTH_MESSAGES } from '../../common/constants/messages.constants';
+import { BCRYPT_ROUNDS, getTokenExpiresAt } from '../../common/constants/security.constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { GoogleSignupDto } from './dto/google-signup.dto';
@@ -57,9 +60,9 @@ export class AuthService {
       data: {
         email,
         nickname,
-        passwordHash: await bcrypt.hash(password, 10),
+        passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
         tokenHash: this.hashToken(verificationToken),
-        expiresAt: this.getTokenExpiresAt(),
+        expiresAt: getTokenExpiresAt(),
       },
     });
 
@@ -157,7 +160,7 @@ export class AuthService {
       where: { id: pendingRegistration.id },
       data: {
         tokenHash: this.hashToken(verificationToken),
-        expiresAt: this.getTokenExpiresAt(),
+        expiresAt: getTokenExpiresAt(),
       },
     });
 
@@ -211,7 +214,7 @@ export class AuthService {
       data: {
         email: payload.email,
         nickname,
-        passwordHash: await bcrypt.hash(password, 10),
+        passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
         profileImage: payload.picture,
       },
     });
@@ -234,7 +237,7 @@ export class AuthService {
       data: {
         userId: user.id,
         tokenHash: this.hashToken(resetToken),
-        expiresAt: this.getTokenExpiresAt(),
+        expiresAt: getTokenExpiresAt(),
       },
       select: { id: true },
     });
@@ -271,7 +274,7 @@ export class AuthService {
     await this.prisma.$transaction([
       this.prisma.user.update({
         where: { id: resetToken.userId },
-        data: { passwordHash: await bcrypt.hash(dto.password, 10) },
+        data: { passwordHash: await bcrypt.hash(dto.password, BCRYPT_ROUNDS) },
       }),
       this.prisma.passwordResetToken.update({
         where: { id: resetToken.id },
@@ -368,7 +371,7 @@ export class AuthService {
 
   private assertUserCanLogin(status: UserStatus) {
     if (status === 'SUSPENDED') {
-      throw new UnauthorizedException('This account is suspended. Please check your sanction history.');
+      throw new UnauthorizedException(AUTH_MESSAGES.SUSPENDED_ACCOUNT);
     }
     if (status === 'DELETED') {
       throw new UnauthorizedException('삭제된 계정입니다.');
@@ -440,17 +443,13 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
-  private getTokenExpiresAt() {
-    return new Date(Date.now() + 1000 * 60 * 30);
-  }
-
   private createEmailVerificationUrl(token: string) {
-    const clientUrl = process.env.CLIENT_URL ?? 'http://localhost:5173';
+    const clientUrl = process.env.CLIENT_URL ?? DEFAULT_CLIENT_URL;
     return `${clientUrl}/verify-email?token=${token}`;
   }
 
   private createPasswordResetUrl(token: string) {
-    const clientUrl = process.env.CLIENT_URL ?? 'http://localhost:5173';
+    const clientUrl = process.env.CLIENT_URL ?? DEFAULT_CLIENT_URL;
     return `${clientUrl}/password-reset?token=${token}`;
   }
 

@@ -5,10 +5,11 @@ import { AppModule } from './app.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { API_PREFIX, DEFAULT_CLIENT_URL, PORT } from './common/constants/domain.constants';
 
 const getAllowedOrigins = () => {
   const origins = new Set<string>();
-  const clientUrl = process.env.CLIENT_URL ?? 'http://localhost:5173';
+  const clientUrl = process.env.CLIENT_URL ?? DEFAULT_CLIENT_URL;
   origins.add(clientUrl);
 
   for (const origin of (process.env.CORS_ORIGINS ?? '').split(',')) {
@@ -34,7 +35,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix(API_PREFIX);
   app.useGlobalFilters(new PrismaExceptionFilter());
   app.useGlobalInterceptors(new RequestLoggingInterceptor(), new TransformInterceptor());
   app.useGlobalPipes(
@@ -45,7 +46,7 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(process.env.PORT ?? 3000);
+  await app.listen(PORT);
 }
 
 bootstrap();

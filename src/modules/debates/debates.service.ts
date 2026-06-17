@@ -14,6 +14,8 @@ import {
   withConsensusVoteSummary,
   withParticipantCount,
 } from '../../common/constants/select.constants';
+import { DEFAULT_CHILD_DEBATE_TYPE } from '../../common/constants/domain.constants';
+import { DEBATE_MESSAGES } from '../../common/constants/messages.constants';
 import { normalizePagination, paginationMeta } from '../../common/utils/pagination.util';
 import { validateSelection } from '../../common/utils/selection.util';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -32,12 +34,32 @@ import { CreateSelectionTargetDto } from './dto/create-selection-target.dto';
 import { ListDebatesDto } from './dto/list-debates.dto';
 import { UpdateStanceDto } from './dto/update-stance.dto';
 
-const CONSENSUS_BLOCK_MESSAGE =
-  '진행 중인 합의 또는 하위 토론이 있어 새 의견을 작성할 수 없습니다.';
-const CLOSED_WRITE_MESSAGE = '종료된 토론에서는 새 내용을 작성할 수 없습니다.';
-const ARCHIVED_WRITE_MESSAGE = '아카이브된 토론은 읽기 전용입니다.';
-const PROS_CONS_STANCE_REQUIRED_MESSAGE =
-  '찬반 토론에서는 입장을 선택해야 의견을 작성할 수 있습니다.';
+const DEFAULT_DEBATE_STATUS = 'OPEN' as const;
+
+const normalizePolicyText = (value?: string | null) => value?.trim().normalize('NFC') ?? '';
+
+const getDefaultChildDebateType = () => DEFAULT_CHILD_DEBATE_TYPE;
+const getDefaultDebateStatus = () => DEFAULT_DEBATE_STATUS;
+
+const assertWritableDebateStatus = (status: string) => {
+  if (status === 'CLOSED') {
+    throw new ConflictException(DEBATE_MESSAGES.CLOSED_WRITE);
+  }
+  if (status === 'ARCHIVED') {
+    throw new ConflictException(DEBATE_MESSAGES.ARCHIVED_WRITE);
+  }
+};
+
+const assertCanArchive = (status: string) => {
+  if (status === 'ARCHIVED') {
+    throw new ConflictException(DEBATE_MESSAGES.ALREADY_ARCHIVED);
+  }
+  if (status !== 'CLOSED') {
+    throw new BadRequestException(DEBATE_MESSAGES.ONLY_CLOSED_CAN_ARCHIVE);
+  }
+};
+
+const isConsensusDebateBlocked = (progress: { isBlocked: boolean }) => progress.isBlocked;
 
 @Injectable()
 export class DebatesService {
@@ -155,7 +177,7 @@ export class DebatesService {
     });
 
     if (!debate) {
-      throw new NotFoundException('토론을 찾을 수 없습니다.');
+      throw new NotFoundException(DEBATE_MESSAGES.NOT_FOUND);
     }
 
     const [bookmark, subscription, participant] = userId
@@ -208,9 +230,9 @@ export class DebatesService {
     });
 
     if (!debate) {
-      throw new NotFoundException('토론을 찾을 수 없습니다.');
+      throw new NotFoundException(DEBATE_MESSAGES.NOT_FOUND);
     }
-    this.ensureWritableStatus(debate.status);
+    assertWritableDebateStatus(debate.status);
     if (debate.debateType !== 'PROS_CONS') {
       throw new BadRequestException('찬반 토론에서만 입장을 선택할 수 있습니다.');
     }
@@ -288,7 +310,7 @@ export class DebatesService {
     });
 
     if (!debate) {
-      throw new NotFoundException('토론을 찾을 수 없습니다.');
+      throw new NotFoundException(DEBATE_MESSAGES.NOT_FOUND);
     }
 
     return {
@@ -375,21 +397,19 @@ export class DebatesService {
     });
 
     if (!debate) {
-      throw new NotFoundException('토론을 찾을 수 없습니다.');
+      throw new NotFoundException(DEBATE_MESSAGES.NOT_FOUND);
     }
     this.ensureCanManageDebate(debate.creatorId, userId, userRole, '종료');
     if (debate.status === 'ARCHIVED') {
-      throw new ConflictException(ARCHIVED_WRITE_MESSAGE);
+      throw new ConflictException(DEBATE_MESSAGES.ARCHIVED_WRITE);
     }
     if (debate.status === 'CLOSED') {
-      throw new ConflictException('이미 종료된 토론입니다.');
+      throw new ConflictException(DEBATE_MESSAGES.ALREADY_CLOSED);
     }
     if (debate.debateType === 'CONSENSUS') {
       const progress = await this.buildProgress(debateId);
-      if (progress.isBlocked) {
-        throw new ConflictException(
-          '진행 중인 합의 또는 하위 토론이 있어 토론을 종료할 수 없습니다.',
-        );
+      if (isConsensusDebateBlocked(progress)) {
+        throw new ConflictException(DEBATE_MESSAGES.CLOSE_BLOCKED);
       }
     }
 
@@ -425,15 +445,10 @@ export class DebatesService {
     });
 
     if (!debate) {
-      throw new NotFoundException('토론을 찾을 수 없습니다.');
+      throw new NotFoundException(DEBATE_MESSAGES.NOT_FOUND);
     }
     this.ensureCanManageDebate(debate.creatorId, userId, userRole, '아카이브');
-    if (debate.status === 'ARCHIVED') {
-      throw new ConflictException('이미 아카이브된 토론입니다.');
-    }
-    if (debate.status !== 'CLOSED') {
-      throw new BadRequestException('종료된 토론만 아카이브할 수 있습니다.');
-    }
+    assertCanArchive(debate.status);
 
     const updated = await this.prisma.debate.update({
       where: { id: debateId },
@@ -640,8 +655,8 @@ export class DebatesService {
       data: {
         title: dto.title,
         description: dto.description,
-        debateType: dto.debateType ?? 'FREE',
-        status: 'OPEN',
+        debateType: dto.debateType ?? getDefaultChildDebateType(),
+        status: getDefaultDebateStatus(),
         creatorId: userId,
         parentDebateId: selectionTarget.debateId,
         sourceSelectionTargetId: selectionTarget.id,
@@ -683,6 +698,7 @@ export class DebatesService {
     await this.ensureSelectionTarget(debateId, dto.selectionTargetId);
     await this.ensureNoDuplicateConsensus(
       dto.selectionTargetId,
+      dto.term,
       dto.title,
       dto.content,
     );
@@ -724,6 +740,7 @@ export class DebatesService {
       where.OR = [
         { title: { contains: query.keyword, mode: 'insensitive' } },
         { description: { contains: query.keyword, mode: 'insensitive' } },
+        { tagMaps: { some: { tag: { name: { contains: query.keyword, mode: 'insensitive' } } } } },
       ];
     }
 
@@ -762,7 +779,7 @@ export class DebatesService {
       select: { id: true },
     });
     if (!debate) {
-      throw new NotFoundException('토론을 찾을 수 없습니다.');
+      throw new NotFoundException(DEBATE_MESSAGES.NOT_FOUND);
     }
   }
 
@@ -772,18 +789,13 @@ export class DebatesService {
       select: { status: true },
     });
     if (!debate) {
-      throw new NotFoundException('토론을 찾을 수 없습니다.');
+      throw new NotFoundException(DEBATE_MESSAGES.NOT_FOUND);
     }
-    this.ensureWritableStatus(debate.status);
+    assertWritableDebateStatus(debate.status);
   }
 
   private ensureWritableStatus(status: string) {
-    if (status === 'CLOSED') {
-      throw new ConflictException(CLOSED_WRITE_MESSAGE);
-    }
-    if (status === 'ARCHIVED') {
-      throw new ConflictException(ARCHIVED_WRITE_MESSAGE);
-    }
+    assertWritableDebateStatus(status);
   }
 
   private async ensureDebateWritable(debateId: string) {
@@ -793,14 +805,14 @@ export class DebatesService {
     });
 
     if (!debate) {
-      throw new NotFoundException('토론을 찾을 수 없습니다.');
+      throw new NotFoundException(DEBATE_MESSAGES.NOT_FOUND);
     }
-    this.ensureWritableStatus(debate.status);
+    assertWritableDebateStatus(debate.status);
 
     if (debate.debateType === 'CONSENSUS') {
       const progress = await this.buildProgress(debateId);
-      if (progress.isBlocked) {
-        throw new ConflictException(CONSENSUS_BLOCK_MESSAGE);
+      if (isConsensusDebateBlocked(progress)) {
+        throw new ConflictException(DEBATE_MESSAGES.CONSENSUS_BLOCK);
       }
     }
 
@@ -885,7 +897,7 @@ export class DebatesService {
 
     const stance = requestedStance ?? currentStance?.stance;
     if (!stance) {
-      throw new BadRequestException(PROS_CONS_STANCE_REQUIRED_MESSAGE);
+      throw new BadRequestException(DEBATE_MESSAGES.PROS_CONS_STANCE_REQUIRED);
     }
 
     if (!currentStance || currentStance.stance !== stance) {
@@ -952,9 +964,9 @@ export class DebatesService {
       where: { id: selectionTargetId },
       select: { debateId: true },
     });
-    if (!selection) throw new NotFoundException('선택 대상을 찾을 수 없습니다.');
+    if (!selection) throw new NotFoundException(DEBATE_MESSAGES.SELECTION_TARGET_NOT_FOUND);
     if (selection.debateId !== debateId) {
-      throw new BadRequestException('선택 대상이 요청한 토론에 속하지 않습니다.');
+      throw new BadRequestException(DEBATE_MESSAGES.SELECTION_TARGET_NOT_IN_DEBATE);
     }
   }
 
@@ -983,15 +995,24 @@ export class DebatesService {
 
   private async ensureNoDuplicateConsensus(
     selectionTargetId: string,
+    term: string,
     title: string,
     content: string,
   ) {
+    const normalizedTerm = normalizePolicyText(term);
+    const normalizedTitle = normalizePolicyText(title);
+    const normalizedContent = normalizePolicyText(content);
     const existing = await this.prisma.consensus.findFirst({
-      where: { selectionTargetId, title, content },
-      select: { id: true },
+      where: { selectionTargetId },
+      select: { id: true, term: true, title: true, content: true },
     });
-    if (existing) {
-      throw new ConflictException('동일한 합의안이 이미 제안되어 있습니다.');
+    if (
+      existing &&
+      normalizePolicyText(existing.term) === normalizedTerm &&
+      normalizePolicyText(existing.title) === normalizedTitle &&
+      normalizePolicyText(existing.content) === normalizedContent
+    ) {
+      throw new ConflictException(DEBATE_MESSAGES.DUPLICATE_CONSENSUS);
     }
   }
 
