@@ -1,8 +1,9 @@
 import { IsIn, IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
+import { SELECTION_SOURCES, type SelectionSourceValue } from '../../../common/constants/domain.constants';
 
 export class CreateSelectionTargetDto {
-  @IsIn(['POST', 'COMMENT'])
-  sourceType!: 'POST' | 'COMMENT';
+  @IsIn(SELECTION_SOURCES)
+  sourceType!: SelectionSourceValue;
 
   @IsString()
   @IsNotEmpty()

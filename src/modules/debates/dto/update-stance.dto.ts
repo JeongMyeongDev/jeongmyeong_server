@@ -1,6 +1,7 @@
 import { IsIn } from 'class-validator';
+import { DEBATE_STANCES, type DebateStanceValue } from '../../../common/constants/domain.constants';
 
 export class UpdateStanceDto {
-  @IsIn(['PRO', 'CON', 'NEUTRAL'])
-  stance!: 'PRO' | 'CON' | 'NEUTRAL';
+  @IsIn(DEBATE_STANCES)
+  stance!: DebateStanceValue;
 }

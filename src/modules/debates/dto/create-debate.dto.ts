@@ -11,6 +11,12 @@ import {
   Matches,
 } from 'class-validator';
 import { IsCommunityText } from '../../../common/validators/community-text.validator';
+import {
+  CLOSE_CONDITION_TYPES,
+  DEBATE_TYPES,
+  type CloseConditionTypeValue,
+  type DebateTypeValue,
+} from '../../../common/constants/domain.constants';
 
 const DEBATE_TEXT_PATTERN = /^(?=.*[\p{L}\p{N}])[\p{L}\p{N}\s]+$/u;
 const DEBATE_TEXT_MESSAGE = '한글, 영문, 숫자, 공백만 입력할 수 있습니다.';
@@ -28,8 +34,8 @@ export class CreateDebateDto {
   @Matches(DEBATE_TEXT_PATTERN, { message: DEBATE_TEXT_MESSAGE })
   description!: string;
 
-  @IsIn(['FREE', 'CONSENSUS', 'PROS_CONS'])
-  debateType!: 'FREE' | 'CONSENSUS' | 'PROS_CONS';
+  @IsIn(DEBATE_TYPES)
+  debateType!: DebateTypeValue;
 
   @IsOptional()
   @IsArray()
@@ -40,8 +46,8 @@ export class CreateDebateDto {
   tagIds?: string[];
 
   @IsOptional()
-  @IsIn(['TIME_LIMIT', 'MANUAL', 'TARGET_REACHED'])
-  closeConditionType?: 'TIME_LIMIT' | 'MANUAL' | 'TARGET_REACHED';
+  @IsIn(CLOSE_CONDITION_TYPES)
+  closeConditionType?: CloseConditionTypeValue;
 
   @IsOptional()
   @IsDateString()

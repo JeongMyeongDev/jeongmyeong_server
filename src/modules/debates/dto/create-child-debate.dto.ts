@@ -1,4 +1,5 @@
 import { ArrayMaxSize, ArrayUnique, IsArray, IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { DEBATE_TYPES, type DebateTypeValue } from '../../../common/constants/domain.constants';
 import { IsCommunityText } from '../../../common/validators/community-text.validator';
 
 export class CreateChildDebateDto {
@@ -13,8 +14,8 @@ export class CreateChildDebateDto {
   description!: string;
 
   @IsOptional()
-  @IsIn(['FREE', 'CONSENSUS', 'PROS_CONS'])
-  debateType?: 'FREE' | 'CONSENSUS' | 'PROS_CONS';
+  @IsIn(DEBATE_TYPES)
+  debateType?: DebateTypeValue;
 
   @IsOptional()
   @IsArray()
