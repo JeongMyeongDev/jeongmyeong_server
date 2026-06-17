@@ -44,6 +44,15 @@ export class DebatesController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('participated')
+  findParticipatedDebates(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListDebatesDto,
+  ) {
+    return this.debatesService.findParticipatedDebates(user.id, query);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Get('bookmarks')
   findMyBookmarks(
     @CurrentUser() user: AuthenticatedUser,

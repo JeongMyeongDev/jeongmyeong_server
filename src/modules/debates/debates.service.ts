@@ -127,6 +127,30 @@ export class DebatesService {
     };
   }
 
+  async findParticipatedDebates(userId: string, query: ListDebatesDto) {
+    const { page, limit, skip } = normalizePagination(query);
+    const where: Prisma.DebateParticipantWhereInput = {
+      userId,
+      ...(query.status ? { debate: { status: query.status } } : {}),
+    };
+
+    const [participants, totalCount] = await this.prisma.$transaction([
+      this.prisma.debateParticipant.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { joinedAt: 'desc' },
+        select: { debate: { select: debateListSelect } },
+      }),
+      this.prisma.debateParticipant.count({ where }),
+    ]);
+
+    return {
+      debates: participants.map((p) => withParticipantCount(p.debate)),
+      ...paginationMeta(page, limit, totalCount),
+    };
+  }
+
   async findMyBookmarks(userId: string, query: ListDebatesDto) {
     const { page, limit, skip } = normalizePagination(query);
     const [bookmarks, totalCount] = await this.prisma.$transaction([
