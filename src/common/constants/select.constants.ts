@@ -54,6 +54,22 @@ export const debateListSelect = {
   status: true,
   parentDebateId: true,
   sourceSelectionTargetId: true,
+  parentDebate: {
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      debateType: true,
+    },
+  },
+  sourceSelectionTarget: {
+    select: {
+      id: true,
+      selectedText: true,
+      sourceType: true,
+      sourceId: true,
+    },
+  },
   closedAt: true,
   createdAt: true,
   archivedAt: true,
@@ -79,6 +95,25 @@ export const debateSummarySelect = {
   ...debateListSelect,
   creator: {
     select: { id: true, nickname: true, profileImage: true },
+  },
+  childDebates: {
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      debateType: true,
+      parentDebateId: true,
+      createdAt: true,
+      sourceSelectionTarget: {
+        select: {
+          id: true,
+          selectedText: true,
+          sourceType: true,
+          sourceId: true,
+        },
+      },
+    },
   },
   participants: {
     orderBy: { joinedAt: 'asc' },
